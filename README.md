@@ -27,7 +27,13 @@
     npm install
     ```
 
-3. Install LanguageServer.quark
+3. Build or download the supercollider `topic/refactor-com-port` branch:
+   
+    CI builds: https://github.com/supercollider/supercollider/actions?query=branch%3Atopic%2Frefactor-com-port++ (click the most recent green build, scroll to "Artifacts" to find the builds)
+
+    https://github.com/supercollider/supercollider/tree/topic/refactor-com-port
+
+4. Install LanguageServer.quark
    
     ```
     // (in SuperCollider...)
