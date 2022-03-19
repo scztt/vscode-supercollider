@@ -1,0 +1,5 @@
+Language: JavaScript
+BasedOnStyle: Microsoft
+ColumnLimit: 0
+AlignOperands: AlignAfterOperator
+AlignConsecutiveAssignments: AcrossEmptyLinesAndComments
