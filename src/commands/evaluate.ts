@@ -185,9 +185,14 @@ export function registerEvaluateProvider(context: SuperColliderContext, provider
     subscriptions.push(
         vscode.commands.registerCommand(
             'supercollider.evaluateSelection',
-            () => {
+            (inputRange) => {
                 const document = vscode.window.activeTextEditor.document;
-                const range    = currentDocumentSelection();
+                const range    = (inputRange != null)
+                    ? new vscode.Selection(
+                          new vscode.Position(inputRange['start']['line'], inputRange['start']['character']),
+                          new vscode.Position(inputRange['end']['line'], inputRange['end']['character']))
+                    : currentDocumentSelection();
+
                 if (range !== null)
                 {
                     provider.evaluateString(document, range)
