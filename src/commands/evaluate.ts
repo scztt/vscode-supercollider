@@ -128,8 +128,8 @@ function currentDocumentRegion()
     let startLine = document.lineAt(selection.start);
     let endLine   = document.lineAt(selection.end);
 
-    let startRE   = new RegExp(/^\(\s*$/);
-    let endRE     = new RegExp(/^\s*\)\s*$/);
+    let startRE   = new RegExp(/^\(\W*(\/\/.*)?$/);
+    let endRE     = new RegExp(/^\)\W*\;?\s*(\/\/.*)?$/);
 
     while (!startRE.test(startLine.text))
     {
