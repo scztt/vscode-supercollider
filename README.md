@@ -8,7 +8,7 @@
   - Environment variable references like `~envir`
   - Names of def-style references like `Pdef(\foo` or `Ndef(\bar`
 - Go to definition for classes and methods
-- Execute selection, line, and region
+- Evaluate selection, line, and region
 - Decorations and notifications to show successful/failed execution
 
 # Development

@@ -1,6 +1,4 @@
 import * as vscode from 'vscode';
-
-import * as execute from './commands/execute'
 import * as help from './commands/help'
 import {SuperColliderContext} from './context';
 

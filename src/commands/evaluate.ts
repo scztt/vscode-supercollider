@@ -21,13 +21,13 @@ function ensure(target, key)
     return target[key];
 }
 
-// These decorators are applied to executed regions of code during/after execution.
-const executeDecorator = vscode.window.createTextEditorDecorationType({
+// These decorators are applied to evaluated regions of code during/after execution.
+const evaluateDecorator = vscode.window.createTextEditorDecorationType({
     backgroundColor : new vscode.ThemeColor('inputOption.activeBackground'),
     isWholeLine : true,
 });
 const successDecorator = vscode.window.createTextEditorDecorationType({
-    backgroundColor : new vscode.ThemeColor('inputValidation.infoBackground'),
+    // backgroundColor : new vscode.ThemeColor('inputValidation.infoBackground'),
     overviewRulerColor : new vscode.ThemeColor('inputValidation.infoBackground'),
     outline : 'border-left-width: 1px',
     isWholeLine : true,
@@ -38,13 +38,13 @@ const errorDecorator   = vscode.window.createTextEditorDecorationType({
     outline : 'border-left-width: 1px',
     isWholeLine : true,
   });
-let executeCount       = 0;
+let evaluateCount       = 0;
 const decoratorTimeout = 5000;
 
 // Start and end execution actions
-function onEndExecute(textEditor: TextEditor, range: Range, responseText: string, isError: boolean)
+function onEndEvaluate(textEditor: TextEditor, range: Range, responseText: string, isError: boolean)
 {
-    textEditor.setDecorations(executeDecorator, []);
+    textEditor.setDecorations(evaluateDecorator, []);
 
     if (isError)
     {
@@ -64,29 +64,29 @@ function onEndExecute(textEditor: TextEditor, range: Range, responseText: string
     }
 }
 
-function onStartExecute(textEditor: TextEditor, range: Range)
+function onStartEvaluate(textEditor: TextEditor, range: Range)
 {
-    let currentExecuteCount = ++executeCount;
+    let currentEvaluateCount = ++ evaluateCount;
 
     textEditor.setDecorations(successDecorator, [])
     textEditor.setDecorations(errorDecorator, [])
-    textEditor.setDecorations(executeDecorator, [ {
+    textEditor.setDecorations(evaluateDecorator, [ {
                                   range : range,
-                                  hoverMessage : "Executed the thing"
+                                  hoverMessage : "Evaluated the thing"
                               } ]);
 
     setTimeout(() => {
-        // Execution has timed out, so clear - don't clear if we've had another execute in the mean time
-        if (executeCount == currentExecuteCount)
+        // Execution has timed out, so clear - don't clear if we've had another evaluate in the mean time
+        if (evaluateCount == currentEvaluateCount)
         {
-            textEditor.setDecorations(executeDecorator, []);
+            textEditor.setDecorations(evaluateDecorator, []);
         }
     }, decoratorTimeout);
 
     return (text: string, isError: boolean) => {
-        if (executeCount == currentExecuteCount)
+        if (evaluateCount == currentEvaluateCount)
         {
-            onEndExecute(textEditor, range, text, isError)
+            onEndEvaluate(textEditor, range, text, isError)
         }
     }
 }
@@ -174,47 +174,47 @@ function currentDocumentRegion()
     }
 }
 
-interface ExecuteSelectionProvider {
-    executeString(document: vscode.TextDocument, range: vscode.Selection): vscode.ProviderResult<ExecuteSelectionRequest.ExecuteSelectionResult>;
+interface EvaluateSelectionProvider {
+    evaluateString(document: vscode.TextDocument, range: vscode.Selection): vscode.ProviderResult<EvaluateSelectionRequest.EvaluateSelectionResult>;
 }
 
-export function registerExecuteProvider(context: SuperColliderContext, provider): vscode.Disposable
+export function registerEvaluateProvider(context: SuperColliderContext, provider): vscode.Disposable
 {
     let subscriptions: vscode.Disposable[] = [];
 
     subscriptions.push(
         vscode.commands.registerCommand(
-            'supercollider.executeSelection',
+            'supercollider.evaluateSelection',
             () => {
                 const document = vscode.window.activeTextEditor.document;
                 const range    = currentDocumentSelection();
                 if (range !== null)
                 {
-                    provider.executeString(document, range)
+                    provider.evaluateString(document, range)
                 }
             }));
 
     subscriptions.push(
         vscode.commands.registerCommand(
-            'supercollider.executeLine',
+            'supercollider.evaluateLine',
             () => {
                 const document = vscode.window.activeTextEditor.document;
                 const range    = currentDocumentLine();
                 if (range !== null)
                 {
-                    provider.executeString(document, range)
+                    provider.evaluateString(document, range)
                 }
             }));
 
     subscriptions.push(
         vscode.commands.registerCommand(
-            'supercollider.executeRegion',
+            'supercollider.evaluateRegion',
             () => {
                 const document = vscode.window.activeTextEditor.document;
                 const range    = currentDocumentRegion();
                 if (range !== null)
                 {
-                    provider.executeString(document, range)
+                    provider.evaluateString(document, range)
                 }
             }));
 
@@ -223,31 +223,31 @@ export function registerExecuteProvider(context: SuperColliderContext, provider)
     })
 }
 
-interface ExecuteSelectionOptions extends WorkDoneProgressOptions {
+interface EvaluateSelectionOptions extends WorkDoneProgressOptions {
 }
 
-interface ExecuteSelectionRegistrationOptions extends ExecuteSelectionOptions, TextDocumentRegistrationOptions, StaticRegistrationOptions {
+interface EvaluateSelectionRegistrationOptions extends EvaluateSelectionOptions, TextDocumentRegistrationOptions, StaticRegistrationOptions {
 }
 
-namespace ExecuteSelectionRequest
+namespace EvaluateSelectionRequest
 {
-export const method = 'textDocument/executeSelection';
+export const method = 'textDocument/evaluateSelection';
 
-export interface ExecuteSelectionParams {
+export interface EvaluateSelectionParams {
     textDocument: vscodelc.TextDocumentIdentifier,
         sourceCode: string
 }
 
-export interface ExecuteSelectionResult {
+export interface EvaluateSelectionResult {
     compileError: string|undefined,
         result: string|undefined,
         error: string|undefined
 }
 
-export const type = new ProtocolRequestType<ExecuteSelectionParams, ExecuteSelectionResult, never, void, ExecuteSelectionRegistrationOptions>(method);
+export const type = new ProtocolRequestType<EvaluateSelectionParams, EvaluateSelectionResult, never, void, EvaluateSelectionRegistrationOptions>(method);
 }
 
-async function executeString(client: vscodelc.BaseLanguageClient, document: vscode.TextDocument, range: Range): Promise<ExecuteSelectionRequest.ExecuteSelectionResult>
+async function evaluateString(client: vscodelc.BaseLanguageClient, document: vscode.TextDocument, range: Range): Promise<EvaluateSelectionRequest.EvaluateSelectionResult>
 {
     const activeTextEditor = vscode.window.activeTextEditor;
 
@@ -257,9 +257,9 @@ async function executeString(client: vscodelc.BaseLanguageClient, document: vsco
     const uri           = vscode.Uri.file(document.fileName);
     const docIdentifier = vscodelc.TextDocumentIdentifier.create(uri.toString());
 
-    let finishFunc      = onStartExecute(activeTextEditor, range);
+    let finishFunc      = onStartEvaluate(activeTextEditor, range);
 
-    const result        = client.sendRequest(ExecuteSelectionRequest.type, {
+    const result        = client.sendRequest(EvaluateSelectionRequest.type, {
         textDocument : docIdentifier,
         sourceCode : activeTextEditor.document.getText(range)
     });
@@ -290,18 +290,18 @@ async function executeString(client: vscodelc.BaseLanguageClient, document: vsco
 
 // @TODO A lot of boilerplate is required to register this as a feature, but in the end we just trigger the commands roughly the same way.
 // Is there benefit here, apart from that we can specify client capabilities and pass options back to our client (which we do not do now anyway...)?
-export class ExecuteSelectionFeature extends TextDocumentFeature<ExecuteSelectionOptions|boolean, ExecuteSelectionRegistrationOptions, ExecuteSelectionProvider>
+export class EvaluateSelectionFeature extends TextDocumentFeature<EvaluateSelectionOptions|boolean, EvaluateSelectionRegistrationOptions, EvaluateSelectionProvider>
 {
     _context: SuperColliderContext;
 
     constructor(client, context: SuperColliderContext)
     {
-        super(client, ExecuteSelectionRequest.type);
+        super(client, EvaluateSelectionRequest.type);
         this._context = context;
     }
     fillClientCapabilities(capabilities)
     {
-        (ensure(ensure(capabilities, 'textDocument'), 'execution')).executeSelection = true;
+        (ensure(ensure(capabilities, 'textDocument'), 'evaluation')).evaluateSelection = true;
     }
 
     initialize(capabilities, documentSelector)
@@ -317,20 +317,20 @@ export class ExecuteSelectionFeature extends TextDocumentFeature<ExecuteSelectio
         });
     }
 
-    registerLanguageProvider(): [ vscode.Disposable, ExecuteSelectionProvider ]
+    registerLanguageProvider(): [ vscode.Disposable, EvaluateSelectionProvider ]
     {
-        const provider: ExecuteSelectionProvider = {
-            executeString : (document: vscode.TextDocument, range: vscode.Selection) => {
+        const provider: EvaluateSelectionProvider = {
+            evaluateString : (document: vscode.TextDocument, range: vscode.Selection) => {
                 const client                  = this._client;
 
-                const provideExecuteSelection = (document: vscode.TextDocument, range: vscode.Selection) => {
-                    return executeString(client, document, range);
+                const provideEvaluateSelection = (document: vscode.TextDocument, range: vscode.Selection) => {
+                    return evaluateString(client, document, range);
                 };
 
-                return provideExecuteSelection(document, range);
+                return provideEvaluateSelection(document, range);
             }
         };
 
-        return [ registerExecuteProvider(this._context, provider), provider ];
+        return [ registerEvaluateProvider(this._context, provider), provider ];
     }
 };

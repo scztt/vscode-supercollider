@@ -67,7 +67,7 @@
         ],
         "keybindings": [
             {
-                "command": "supercollider.executeSelection",
+                "command": "supercollider.evaluateSelection",
                 "key": "ctrl+return",
                 "when": "resourceExtname == .scd"
             },
@@ -88,18 +88,18 @@
                 "category": "SuperCollider"
             },
             {
-                "command": "supercollider.executeSelection",
-                "title": "Execute selection in sclang",
+                "command": "supercollider.evaluateSelection",
+                "title": "Evaluate selection in sclang",
                 "category": "SuperCollider"
             },
             {
-                "command": "supercollider.executeRegion",
-                "title": "Execute region in sclang",
+                "command": "supercollider.evaluateRegion",
+                "title": "Evaluate region in sclang",
                 "category": "SuperCollider"
             },
             {
-                "command": "supercollider.executeLine",
-                "title": "Execute line in sclang",
+                "command": "supercollider.evaluateLine",
+                "title": "Evaluate line in sclang",
                 "category": "SuperCollider"
             },
             {

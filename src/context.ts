@@ -18,7 +18,7 @@ import {LanguageClient,
         ResolveCompletionItemSignature,
         ServerOptions} from 'vscode-languageclient/node';
 
-import {ExecuteSelectionFeature} from './commands/execute.js';
+import {EvaluateSelectionFeature} from './commands/evaluate.js';
 import {UDPMessageReader,
         UDPMessageWriter} from './util/readerWriter.js';
 
@@ -96,18 +96,6 @@ export class SuperColliderContext implements Disposable
         return sclangProcess;
     }
 
-    execute(string: String)
-    {
-        if (!this.sclangProcess)
-        {
-            this.sclangProcess = this.createProcess();
-        }
-
-        string = string + execDelimiter;
-
-        this.sclangProcess.stdin.write(string);
-    }
-
     dispose()
     {
         this.disposeProcess();
@@ -173,9 +161,9 @@ export class SuperColliderContext implements Disposable
         let client   = new LanguageClient('SuperColliderLanguageServer', 'SuperCollider Language Server', serverOptions, clientOptions, true);
         client.trace = Trace.Verbose;
 
-        const executeSelectionFeature = new ExecuteSelectionFeature(client, this);
-        executeSelectionFeature.registerLanguageProvider();
-        client.registerFeature(executeSelectionFeature);
+        const evaluateSelectionFeature = new EvaluateSelectionFeature(client, this);
+        evaluateSelectionFeature.registerLanguageProvider();
+        client.registerFeature(evaluateSelectionFeature);
 
         client.onReady().then(function(x) {
             client.onNotification('sclang/evalBegin', function(f) {
