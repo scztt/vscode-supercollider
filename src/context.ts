@@ -173,7 +173,9 @@ export class SuperColliderContext implements Disposable
         let client   = new LanguageClient('SuperColliderLanguageServer', 'SuperCollider Language Server', serverOptions, clientOptions, true);
         client.trace = Trace.Verbose;
 
-        client.registerFeature(new ExecuteSelectionFeature(client, this));
+        const executeSelectionFeature = new ExecuteSelectionFeature(client, this);
+        executeSelectionFeature.registerLanguageProvider();
+        client.registerFeature(executeSelectionFeature);
 
         client.onReady().then(function(x) {
             client.onNotification('sclang/evalBegin', function(f) {
