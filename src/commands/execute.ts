@@ -317,7 +317,7 @@ export class ExecuteSelectionFeature extends TextDocumentFeature<ExecuteSelectio
         });
     }
 
-    registerLanguageProvider(options: ExecuteSelectionRegistrationOptions): [ vscode.Disposable, ExecuteSelectionProvider ]
+    registerLanguageProvider(): [ vscode.Disposable, ExecuteSelectionProvider ]
     {
         const provider: ExecuteSelectionProvider = {
             executeString : (document: vscode.TextDocument, range: vscode.Selection) => {
