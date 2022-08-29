@@ -88,6 +88,31 @@
                 "category": "SuperCollider"
             },
             {
+                "command": "supercollider.bootServer",
+                "title": "Boot server",
+                "category": "SuperCollider"
+            },
+            {
+                "command": "supercollider.rebootServer",
+                "title": "Reboot server",
+                "category": "SuperCollider"
+            },
+            {
+                "command": "supercollider.killAllServers",
+                "title": "Kill all servers",
+                "category": "SuperCollider"
+            },
+            {
+                "command": "supercollider.showServerWindow",
+                "title": "Show server window",
+                "category": "SuperCollider"
+            },
+            {
+                "command": "supercollider.cmdPeriod",
+                "title": "Stop",
+                "category": "SuperCollider"
+            },
+            {
                 "command": "supercollider.evaluateSelection",
                 "title": "Evaluate selection in sclang",
                 "category": "SuperCollider"
@@ -100,16 +125,6 @@
             {
                 "command": "supercollider.evaluateLine",
                 "title": "Evaluate line in sclang",
-                "category": "SuperCollider"
-            },
-            {
-                "command": "supercollider.execInTerminal",
-                "title": "Run this SuperCollider file in Terminal",
-                "category": "SuperCollider"
-            },
-            {
-                "command": "supercollider.killTerminal",
-                "title": "Kill the SuperCollider Terminal",
                 "category": "SuperCollider"
             }
         ],

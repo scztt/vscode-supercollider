@@ -10,7 +10,8 @@ import {CancellationToken,
         TextDocument,
         workspace} from 'vscode';
 import {Trace} from 'vscode-jsonrpc';
-import {LanguageClient,
+import {ExecuteCommandRequest,
+        LanguageClient,
         LanguageClientOptions,
         MessageTransports,
         Middleware,
@@ -111,11 +112,11 @@ export class SuperColliderContext implements Disposable
         let sclangProcess = this.sclangProcess = this.createProcess();
 
         const serverOptions: ServerOptions     = function() {
-            // @TODO what if terminal launch fails?
+                // @TODO what if terminal launch fails?
 
-            const configuration  = workspace.getConfiguration()
-            const readPort       = configuration.get<number>('supercollider.sclang.lspReadPort')
-            const writePort      = configuration.get<number>('supercollider.sclang.lspWritePort')
+            const configuration = workspace.getConfiguration()
+            const readPort      = configuration.get<number>('supercollider.sclang.lspReadPort')
+            const writePort     = configuration.get<number>('supercollider.sclang.lspWritePort')
 
             return new Promise<MessageTransports>((res, err) => {
                 let readerSocket = dgram.createSocket('udp4');
@@ -133,10 +134,10 @@ export class SuperColliderContext implements Disposable
                             res(streamInfo);
                         }
                         outputChannel.append(string);
-                        });
+                    });
 
                     sclangProcess.on('exit', (code, signal) => { sclangProcess = null; });
-                    });
+                });
             });
         };
 
@@ -158,8 +159,8 @@ export class SuperColliderContext implements Disposable
             outputChannel : outputChannel,
         };
 
-        let client   = new LanguageClient('SuperColliderLanguageServer', 'SuperCollider Language Server', serverOptions, clientOptions, true);
-        client.trace = Trace.Verbose;
+        let client                     = new LanguageClient('SuperColliderLanguageServer', 'SuperCollider Language Server', serverOptions, clientOptions, true);
+        client.trace                   = Trace.Verbose;
 
         const evaluateSelectionFeature = new EvaluateSelectionFeature(client, this);
         evaluateSelectionFeature.registerLanguageProvider();
@@ -178,5 +179,13 @@ export class SuperColliderContext implements Disposable
         this.client = client;
 
         this.subscriptions.push(this.client.start());
+    }
+
+    executeCommand(command: string)
+    {
+        let result = this.client.sendRequest(ExecuteCommandRequest.type, {command});
+        result.then(function(result) {
+            console.log(result)
+        });
     }
 }
