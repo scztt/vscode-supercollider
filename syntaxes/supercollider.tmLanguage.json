@@ -113,7 +113,7 @@
               "name": "entity.name.class.supercollider"
             }
           },
-          "match": "^([A-Z]{1}[a-zA-Z0-9_]*)[^a-zA-Z0-9_]"
+          "match": "([A-Z]{1}[a-zA-Z0-9_]*)[^a-zA-Z0-9_]"
         },
 
         {
