@@ -19,13 +19,13 @@ export class UDPMessageReader extends AbstractMessageReader
     constructor(socket: dgram.Socket)
     {
         super();
-        this.buffered = "";
+        this.buffered      = "";
         this.contentLength = null;
-        this.socket = socket;
+        this.socket        = socket;
         this.socket.on('message', (msg, rinfo) => {
             if (!!this.callback)
             {
-                let str  = msg.toString();
+                let str       = msg.toString();
                 this.buffered = this.buffered + str;
 
                 if (this.contentLength === null)
@@ -43,14 +43,13 @@ export class UDPMessageReader extends AbstractMessageReader
                 const bufferSize = getBinarySize(this.buffered);
                 if (bufferSize >= this.contentLength)
                 {
-                    let message = this.buffered.slice(0, bufferSize);
-                    this.buffered = this.buffered.slice(this.contentLength);
+                    let message        = this.buffered.slice(0, bufferSize);
+                    this.buffered      = this.buffered.slice(this.contentLength);
                     this.contentLength = null;
-                    
+
                     let json           = JSON.parse(message);
                     this.callback(json);
                 }
-
             }
         });
     }
@@ -58,7 +57,7 @@ export class UDPMessageReader extends AbstractMessageReader
     listen(callback: DataCallback)
     {
         this.callback = callback;
-        return {dispose : () => { this.callback= null; }};
+        return {dispose : () => { this.callback = null; }};
     };
 }
 
@@ -79,20 +78,28 @@ export class UDPMessageWriter extends AbstractMessageWriter
     write(msg: Message)
     {
         return new Promise<void>((res, err) => {
-            let data     = JSON.stringify(msg)
-            let dataSize = data.length;
+            let data = JSON.stringify(msg);
+            let dataSize = Buffer.byteLength(data, 'utf8');
+            let dataLength = data.length;
 
-            data         = `Content-Length: ${dataSize+1}\r\n\r\n${data}\n`;
+            data             = `Content-Length: ${dataSize + 1}\r\n\r\n${data}\n`;
 
-            this.socket.send(data, this.port, this.address, (err) => {
-                if (err)
-                {
-                    console.log(err);
-                }
-                else
-                {
-                }
-            });
+            const packetSize = Buffer.byteLength(data, 'utf8');
+            const bufferSize = this.socket.getSendBufferSize() - 1;
+
+            for (let offset = 0; offset < packetSize; offset += bufferSize)
+            {
+                const size = Math.min(packetSize - offset, bufferSize)
+                this.socket.send(data, offset, size, this.port, this.address, (err) => {
+                    if (err)
+                    {
+                        console.log(err);
+                    }
+                    else
+                    {
+                    }
+                 });
+            }
 
             res();
         });
