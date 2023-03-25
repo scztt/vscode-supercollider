@@ -38,8 +38,8 @@ const errorDecorator   = vscode.window.createTextEditorDecorationType({
     outline : 'border-left-width: 1px',
     isWholeLine : true,
   });
-let evaluateCount       = 0;
-const decoratorTimeout = 5000;
+let evaluateCount      = 0;
+const decoratorTimeout = 600;
 
 // Start and end execution actions
 function onEndEvaluate(textEditor: TextEditor, range: Range, responseText: string, isError: boolean)
@@ -84,7 +84,7 @@ function onStartEvaluate(textEditor: TextEditor, range: Range)
     }, decoratorTimeout);
 
     return (text: string, isError: boolean) => {
-        if (evaluateCount == currentEvaluateCount)
+        if (evaluateCount != currentEvaluateCount)
         {
             onEndEvaluate(textEditor, range, text, isError)
         }
