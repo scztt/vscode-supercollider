@@ -3,3 +3,5 @@ BasedOnStyle: Microsoft
 ColumnLimit: 0
 AlignOperands: AlignAfterOperator
 AlignConsecutiveAssignments: AcrossEmptyLinesAndComments
+IndentWidth: 4   
+TabWidth: 4   
