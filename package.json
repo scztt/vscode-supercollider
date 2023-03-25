@@ -69,11 +69,59 @@
             {
                 "command": "supercollider.evaluateSelection",
                 "key": "ctrl+return",
+                "mac": "cmd+enter",
+                "when": "editorHasSelection && resourceExtname == .scd"
+            },
+            {
+                "command": "supercollider.evaluateRegion",
+                "key": "ctrl+return",
+                "mac": "cmd+enter",
+                "when": "!editorHasSelection && resourceExtname == .scd"
+            },
+            {
+                "command": "supercollider.evaluateLine",
+                "key": "shift+enter",
                 "when": "resourceExtname == .scd"
             },
             {
-                "command": "supercollider.killTerminal",
-                "key": "ctrl+."
+                "command": "supercollider.cmdPeriod",
+                "key": "ctrl+.",
+                "mac": "cmd+."
+            },
+            {
+                "command": "supercollider.searchHelp",
+                "key": "ctrl+d",
+                "mac": "cmd+d"
+            },
+            {
+                "command": "supercollider.showServerMeter",
+                "key": "ctrl+m",
+                "mac": "cmd+m"
+            },
+            {
+                "command": "supercollider.showScope",
+                "key": "shift+ctrl+m",
+                "mac": "shift+cmd+m"
+            },
+            {
+                "command": "supercollider.showFreqscope",
+                "key": "alt+ctrl+m",
+                "mac": "alt+cmd+m"
+            },
+            {
+                "command": "supercollider.dumpNodeTree",
+                "key": "ctrl+t",
+                "mac": "cmd+t"
+            },
+            {
+                "command": "supercollider.dumpNodeTreeWithControls",
+                "key": "shift+ctrl+t",
+                "mac": "shift+cmd+t"
+            },
+            {
+                "command": "supercollider.showNodeTree",
+                "key": "alt+ctrl+t",
+                "mac": "alt+cmd+t"
             }
         ],
         "commands": [
@@ -105,6 +153,51 @@
             {
                 "command": "supercollider.showServerWindow",
                 "title": "Show server window",
+                "category": "SuperCollider"
+            },
+            {
+                "command": "supercollider.showServerMeter",
+                "title": "Show server meter",
+                "category": "SuperCollider"
+            },
+            {
+                "command": "supercollider.showScope",
+                "title": "Show scope",
+                "category": "SuperCollider"
+            },
+            {
+                "command": "supercollider.showFreqscope",
+                "title": "Show freqscope",
+                "category": "SuperCollider"
+            },
+            {
+                "command": "supercollider.dumpNodeTree",
+                "title": "Dump node tree",
+                "category": "SuperCollider"
+            },
+            {
+                "command": "supercollider.dumpNodeTreeWithControls",
+                "title": "Dump node tree with controls",
+                "category": "SuperCollider"
+            },
+            {
+                "command": "supercollider.showNodeTree",
+                "title": "Show node tree",
+                "category": "SuperCollider"
+            },
+            {
+                "command": "supercollider.startRecording",
+                "title": "Start recording",
+                "category": "SuperCollider"
+            },
+            {
+                "command": "supercollider.pauseRecording",
+                "title": "Pause recording",
+                "category": "SuperCollider"
+            },
+            {
+                "command": "supercollider.stopRecording",
+                "title": "Stop recording",
                 "category": "SuperCollider"
             },
             {
