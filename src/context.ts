@@ -50,6 +50,7 @@ export class SuperColliderContext implements Disposable
         env['SCLANG_LSP_ENABLE']          = '1';
         env['SCLANG_LSP_SERVERPORT']      = readPort.toString();
         env['SCLANG_LSP_CLIENTPORT']      = writePort.toString();
+        env['SCLANG_LSP_LOGLEVEL']        = configuration.get<string>('supercollider.languageServerLogLevel')
 
         let spawnOptions: cp.SpawnOptions = {
             env : Object.assign(env, sclangEnv)

@@ -71,6 +71,11 @@
                         "type": "boolean",
                         "default": true,
                         "description": "Post the results of interpreted code"
+                    },
+                    "supercollider.languageServerLogLevel": {
+                        "type": "string",
+                        "default": "error",
+                        "description": "Log level for sclang language server {info, debug, warning, error, critical, all}"
                     }
                 }
             }
