@@ -61,6 +61,16 @@
                         "type": "number",
                         "default": 58111,
                         "description": "Language Server Protocol write port"
+                    },
+                    "supercollider.sclang.evaluateResultPrefix": {
+                        "type": "string",
+                        "default": "> ",
+                        "description": "Format string for evaluated code result"
+                    },
+                    "supercollider.sclang.postEvaluateResults": {
+                        "type": "boolean",
+                        "default": true,
+                        "description": "Post the results of interpreted code"
                     }
                 }
             }
