@@ -87,41 +87,6 @@
                 "command": "supercollider.cmdPeriod",
                 "key": "ctrl+.",
                 "mac": "cmd+."
-            },
-            {
-                "command": "supercollider.searchHelp",
-                "key": "ctrl+d",
-                "mac": "cmd+d"
-            },
-            {
-                "command": "supercollider.showServerMeter",
-                "key": "ctrl+m",
-                "mac": "cmd+m"
-            },
-            {
-                "command": "supercollider.showScope",
-                "key": "shift+ctrl+m",
-                "mac": "shift+cmd+m"
-            },
-            {
-                "command": "supercollider.showFreqscope",
-                "key": "alt+ctrl+m",
-                "mac": "alt+cmd+m"
-            },
-            {
-                "command": "supercollider.dumpNodeTree",
-                "key": "ctrl+t",
-                "mac": "cmd+t"
-            },
-            {
-                "command": "supercollider.dumpNodeTreeWithControls",
-                "key": "shift+ctrl+t",
-                "mac": "shift+cmd+t"
-            },
-            {
-                "command": "supercollider.showNodeTree",
-                "key": "alt+ctrl+t",
-                "mac": "alt+cmd+t"
             }
         ],
         "commands": [
