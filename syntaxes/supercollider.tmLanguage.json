@@ -4,8 +4,8 @@
         "scd",
         "quark"
       ],
-      "foldingStartMarker": "\\{|\\/\\*",
-      "foldingStopMarker": "\\}|\\*\\/",
+      "foldingStartMarker": "\\{|\\/\\*|^(",
+      "foldingStopMarker": "\\}|\\*\\/|^)",
       "name": "SuperCollider",
       "repository": {
 
