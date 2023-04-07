@@ -46,7 +46,53 @@ export async function activate(context)
     context.subscriptions.push(vscode.commands.registerCommand(
         'supercollider.cmdPeriod',
         async () => {
-            supercolliderContext.executeCommand('supercollider.internal.showServerWindow')}));
+            supercolliderContext.executeCommand('supercollider.internal.cmdPeriod')}));
+
+    context.subscriptions.push(vscode.commands.registerCommand(
+        'supercollider.showServerMeter',
+        async () => {
+            supercolliderContext.executeCommand('supercollider.internal.showServerMeter')}));
+
+    context.subscriptions.push(vscode.commands.registerCommand(
+        'supercollider.showScope',
+        async () => {
+            supercolliderContext.executeCommand('supercollider.internal.showScope')}));
+
+    context.subscriptions.push(vscode.commands.registerCommand(
+        'supercollider.showFreqscope',
+        async () => {
+            supercolliderContext.executeCommand('supercollider.internal.showFreqscope')}));
+
+    context.subscriptions.push(vscode.commands.registerCommand(
+        'supercollider.dumpNodeTree',
+        async () => {
+            supercolliderContext.executeCommand('supercollider.internal.dumpNodeTree')}));
+
+    context.subscriptions.push(vscode.commands.registerCommand(
+        'supercollider.dumpNodeTreeWithControls',
+        async () => {
+            supercolliderContext.executeCommand('supercollider.internal.dumpNodeTreeWithControls')}));
+
+    context.subscriptions.push(vscode.commands.registerCommand(
+        'supercollider.showNodeTree',
+        async () => {
+            supercolliderContext.executeCommand('supercollider.internal.showNodeTree')}));
+
+    context.subscriptions.push(vscode.commands.registerCommand(
+        'supercollider.startRecording',
+        async () => {
+            supercolliderContext.executeCommand('supercollider.internal.startRecording')}));
+
+    context.subscriptions.push(vscode.commands.registerCommand(
+        'supercollider.pauseRecording',
+        async () => {
+            supercolliderContext.executeCommand('supercollider.internal.pauseRecording')}));
+
+    context.subscriptions.push(vscode.commands.registerCommand(
+        'supercollider.stopRecording',
+        async () => {
+            supercolliderContext.executeCommand('supercollider.internal.stopRecording')}));
+    
 
     help.activate(supercolliderContext);
 
