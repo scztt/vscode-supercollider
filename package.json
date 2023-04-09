@@ -71,6 +71,11 @@
                         "type": "boolean",
                         "default": true,
                         "description": "Post the results of interpreted code"
+                    },
+                    "supercollider.languageServerLogLevel": {
+                        "type": "string",
+                        "default": "error",
+                        "description": "Log level for sclang language server {info, debug, warning, error, critical, all}"
                     }
                 }
             }
@@ -79,11 +84,24 @@
             {
                 "command": "supercollider.evaluateSelection",
                 "key": "ctrl+return",
+                "mac": "cmd+enter",
+                "when": "editorHasSelection && resourceExtname == .scd"
+            },
+            {
+                "command": "supercollider.evaluateRegion",
+                "key": "ctrl+return",
+                "mac": "cmd+enter",
+                "when": "!editorHasSelection && resourceExtname == .scd"
+            },
+            {
+                "command": "supercollider.evaluateLine",
+                "key": "shift+enter",
                 "when": "resourceExtname == .scd"
             },
             {
-                "command": "supercollider.killTerminal",
-                "key": "ctrl+."
+                "command": "supercollider.cmdPeriod",
+                "key": "ctrl+.",
+                "mac": "cmd+."
             }
         ],
         "commands": [
@@ -115,6 +133,51 @@
             {
                 "command": "supercollider.showServerWindow",
                 "title": "Show server window",
+                "category": "SuperCollider"
+            },
+            {
+                "command": "supercollider.showServerMeter",
+                "title": "Show server meter",
+                "category": "SuperCollider"
+            },
+            {
+                "command": "supercollider.showScope",
+                "title": "Show scope",
+                "category": "SuperCollider"
+            },
+            {
+                "command": "supercollider.showFreqscope",
+                "title": "Show freqscope",
+                "category": "SuperCollider"
+            },
+            {
+                "command": "supercollider.dumpNodeTree",
+                "title": "Dump node tree",
+                "category": "SuperCollider"
+            },
+            {
+                "command": "supercollider.dumpNodeTreeWithControls",
+                "title": "Dump node tree with controls",
+                "category": "SuperCollider"
+            },
+            {
+                "command": "supercollider.showNodeTree",
+                "title": "Show node tree",
+                "category": "SuperCollider"
+            },
+            {
+                "command": "supercollider.startRecording",
+                "title": "Start recording",
+                "category": "SuperCollider"
+            },
+            {
+                "command": "supercollider.pauseRecording",
+                "title": "Pause recording",
+                "category": "SuperCollider"
+            },
+            {
+                "command": "supercollider.stopRecording",
+                "title": "Stop recording",
                 "category": "SuperCollider"
             },
             {
