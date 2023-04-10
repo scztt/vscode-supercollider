@@ -4,8 +4,8 @@
         "scd",
         "quark"
       ],
-      "foldingStartMarker": "\\{|\\/\\*",
-      "foldingStopMarker": "\\}|\\*\\/",
+      "foldingStartMarker": "\\{|\\/\\*|^\\(",
+      "foldingStopMarker": "\\}|\\*\\/|^\\)",
       "name": "SuperCollider",
       "repository": {
 
@@ -23,7 +23,7 @@
           "patterns": [
             {
               "name": "variable.environment.supercollider",
-              "match": "\\b(~[a-z][a-zA-Z0-9_]*)\\b"
+              "match": "~[a-z][A-Za-z0-9_]*\\b"
             }
           ]
         },
@@ -32,7 +32,7 @@
           "patterns": [
             {
               "name": "variable.supercollider",
-              "match": "\\b([a-z][a-zA-Z0-9_]*)\\b"
+              "match": "([a-z][a-zA-Z0-9_]*)\\b"
             }
           ]
         },
@@ -92,7 +92,7 @@
         {
           "captures": {
             "1": {
-              "name": "support.name.tag.supercollider"
+              "name": "entity.name.symbol.supercollider"
             }
           },
           "match": "([a-z][a-zA-Z0-9_]*)\\s*\\:"
@@ -127,24 +127,6 @@
             }
           },
           "match": "^\\s*(\\**[a-z]{1}[a-zA-Z0-9_]+)\\s*\\{"
-        },
-        {
-          "name": "expression.invocation.supercollider",
-          "begin": "(~?[a-zA-Z0-9_]+)\\s*\\.\\s*([a-zA-Z0-9_]*)\\(",
-          "end": "\\)",
-          "beginCaptures": [
-            {
-              "name": "variable.parameter.supercollider" 
-            },
-            {
-              "name": "variable.parameter.method.supercollider"
-            }
-          ],
-          "patterns": [
-            {
-              "include": "#variable"
-            }
-          ]
         },
         {
           "include": "#class"
