@@ -35,6 +35,7 @@ export class SuperColliderContext implements Disposable
     outputChannel: vscode.OutputChannel;
     codeEvaluationSettings: {
         blinkDuration: number;
+        showMessage : boolean;
     };
 
     processOptions()

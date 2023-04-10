@@ -268,22 +268,30 @@ async function evaluateString(client: vscodelc.BaseLanguageClient, document: vsc
     });
 
     result.then((result) => {
+        const prefix = '⇒ ';
+
         if (result.result !== undefined)
         {
-            const prefix = '⇒ ';
-            vscode.window.showInformationMessage(prefix + result.result);
+            if (context.codeEvaluationSettings.showMessage)
+            {
+                vscode.window.showInformationMessage(prefix + result.result);
+            }
             finishFunc(result.result, false);
         }
         else if (result.compileError !== undefined)
         {
-            const prefix = '⇏ ';
-            vscode.window.showErrorMessage(prefix + result.compileError);
+            if (context.codeEvaluationSettings.showMessage)
+            {
+                vscode.window.showErrorMessage(prefix + result.compileError);
+            }
             finishFunc(result.compileError, true);
         }
         else if (result.error !== undefined)
         {
-            const prefix = '⇏ ';
-            vscode.window.showErrorMessage(prefix + result.error);
+            if (context.codeEvaluationSettings.showMessage)
+            {
+                vscode.window.showErrorMessage(prefix + result.error);
+            }
             finishFunc(result.error, true);
         }
     });
@@ -297,7 +305,7 @@ export class EvaluateSelectionFeature extends TextDocumentFeature<EvaluateSelect
 {
     _context: SuperColliderContext;
 
-    constructor(client, context: SuperColliderContext)
+    constructor(client: vscodelc.BaseLanguageClient, context: SuperColliderContext)
     {
         super(client, EvaluateSelectionRequest.type);
         this._context = context;
@@ -323,7 +331,7 @@ export class EvaluateSelectionFeature extends TextDocumentFeature<EvaluateSelect
     registerLanguageProvider(): [ vscode.Disposable, EvaluateSelectionProvider ]
     {
         const provider: EvaluateSelectionProvider = {
-            evaluateString : (document: vscode.TextDocument, range: vscode.Selection, context: SuperColliderContext) => {
+            evaluateString : (document: vscode.TextDocument, range: vscode.Selection) => {
                 const client                   = this._client;
 
                 const provideEvaluateSelection = (document: vscode.TextDocument, range: vscode.Selection, context: SuperColliderContext) => {
