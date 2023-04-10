@@ -33,24 +33,29 @@ export class SuperColliderContext implements Disposable
     sclangProcess: cp.ChildProcess;
     lspTokenPath: string;
     outputChannel: vscode.OutputChannel;
+    codeEvaluationSettings: {
+        blinkDuration: number;
+    };
 
     processOptions()
     {
-        const configuration               = workspace.getConfiguration()
+        const configuration               = workspace.getConfiguration();
 
-        const sclangPath                  = configuration.get<string>('supercollider.sclang.cmd')
-        const sclangArgs                  = configuration.get<Array<string>>('supercollider.sclang.args')
-        const sclangEnv                   = configuration.get<Object>('supercollider.sclang.environment')
-        const sclangConfYaml              = configuration.get<string>('supercollider.sclang.confYaml')
+        const sclangPath                  = configuration.get<string>('supercollider.sclang.cmd');
+        const sclangArgs                  = configuration.get<Array<string>>('supercollider.sclang.args');
+        const sclangEnv                   = configuration.get<Object>('supercollider.sclang.environment');
+        const sclangConfYaml              = configuration.get<string>('supercollider.sclang.confYaml');
 
-        const readPort                    = configuration.get<number>('supercollider.sclang.lspReadPort')
-        const writePort                   = configuration.get<number>('supercollider.sclang.lspWritePort')
+        const readPort                    = configuration.get<number>('supercollider.sclang.lspReadPort');
+        const writePort                   = configuration.get<number>('supercollider.sclang.lspWritePort');
+
+        this.codeEvaluationSettings       = configuration.get('supercollider.codeEvaluation')
 
         let env                           = process.env;
         env['SCLANG_LSP_ENABLE']          = '1';
         env['SCLANG_LSP_SERVERPORT']      = readPort.toString();
         env['SCLANG_LSP_CLIENTPORT']      = writePort.toString();
-        env['SCLANG_LSP_LOGLEVEL']        = configuration.get<string>('supercollider.languageServerLogLevel')
+        env['SCLANG_LSP_LOGLEVEL']        = configuration.get<string>('supercollider.languageServerLogLevel');
 
         let spawnOptions: cp.SpawnOptions = {
             env : Object.assign(env, sclangEnv)
@@ -113,7 +118,7 @@ export class SuperColliderContext implements Disposable
         let sclangProcess = this.sclangProcess = this.createProcess();
 
         const serverOptions: ServerOptions     = function() {
-                // @TODO what if terminal launch fails?
+            // @TODO what if terminal launch fails?
 
             const configuration = workspace.getConfiguration()
             const readPort      = configuration.get<number>('supercollider.sclang.lspReadPort')
@@ -135,10 +140,10 @@ export class SuperColliderContext implements Disposable
                             res(streamInfo);
                         }
                         outputChannel.append(string);
-                    });
+                        });
 
                     sclangProcess.on('exit', (code, signal) => { sclangProcess = null; });
-                });
+                    });
             });
         };
 
