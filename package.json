@@ -76,6 +76,16 @@
                         "type": "string",
                         "default": "error",
                         "description": "Log level for sclang language server {info, debug, warning, error, critical, all}"
+                    },
+                    "supercollider.codeEvaluation.blinkDuration": {
+                        "type": "number",
+                        "default": 600,
+                        "description": "The amount of time to highlight the executed code"
+                    },
+                    "supercollider.codeEvaluation.showMessage": {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Show a message toast after code execution"
                     }
                 }
             }
