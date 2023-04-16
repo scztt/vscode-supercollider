@@ -4,7 +4,7 @@ import {MarkdownString,
         TextEditor} from 'vscode';
 import * as uuid from 'vscode-languageclient/lib/common/utils/uuid';
 import * as vscodelc from 'vscode-languageclient/node';
-import {HoverMiddleware, ProtocolRequestType,
+import {ProtocolRequestType,
         StaticRegistrationOptions,
         TextDocumentLanguageFeature,
         TextDocumentRegistrationOptions,
