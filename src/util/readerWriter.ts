@@ -1,4 +1,5 @@
 import * as dgram from 'dgram';
+import { TextDecoder } from 'util';
 import {Message} from 'vscode-jsonrpc';
 import {AbstractMessageReader,
         AbstractMessageWriter,
@@ -13,41 +14,53 @@ export class UDPMessageReader extends AbstractMessageReader
 {
     callback: DataCallback;
     socket: dgram.Socket;
-    buffered: String
+    buffered: Uint8Array
     contentLength: number
 
     constructor(socket: dgram.Socket)
     {
         super();
-        this.buffered      = "";
+        this.buffered      = new Uint8Array(0);
         this.contentLength = null;
         this.socket        = socket;
+        
+        let decoder       = new TextDecoder();
+
         this.socket.on('message', (msg, rinfo) => {
             if (!!this.callback)
-            {
-                let str       = msg.toString();
-                this.buffered = this.buffered + str;
+            {   
+                console.log(`Received: ${msg.length} bytes`);
+                this.buffered = new Uint8Array([...this.buffered, ...msg ]);
 
                 if (this.contentLength === null)
                 {
                     const headerRe = /Content-Length: ([0-9]+)\r\n\r(\n)/
-                    let match      = this.buffered.match(headerRe)
+                    const str      = decoder.decode(this.buffered);
+                    let match      = str.match(headerRe)
                     if (match.length > 0)
                     {
-                        this.contentLength = parseInt(match[1]);
+                        const contentLength = this.contentLength = parseInt(match[1]);
+                        console.log(`contentLength: ${contentLength} bytes`);
                         let headerLength   = match[0].length;
                         this.buffered      = this.buffered.slice(match.index + headerLength);
                     }
                 }
 
-                const bufferSize = getBinarySize(this.buffered);
+                // const bufferSize = getBinarySize(this.buffered);
+                const bufferSize = this.buffered.length;
+                console.log(`buffer is now : ${bufferSize} bytes`);
                 if (bufferSize >= this.contentLength)
                 {
-                    let message        = this.buffered.slice(0, bufferSize);
+                    console.log(`buffer is filled`);
+                    let contentLength = this.contentLength;
+                    let message       = decoder.decode(this.buffered.slice(0, this.contentLength));
                     this.buffered      = this.buffered.slice(this.contentLength);
                     this.contentLength = null;
 
                     let json           = JSON.parse(message);
+
+                    console.log(`unprocessed buffer remaining : ${this.buffered.length} bytes`);
+
                     this.callback(json);
                 }
             }
@@ -95,13 +108,10 @@ export class UDPMessageWriter extends AbstractMessageWriter
                     {
                         console.log(err);
                     }
-                    else
-                    {
-                    }
+
+                    res();
                  });
             }
-
-            res();
         });
     }
 

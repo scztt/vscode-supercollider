@@ -30,9 +30,11 @@ export class SuperColliderContext implements Disposable
 {
     subscriptions: vscode.Disposable[] = [];
     client!: LanguageClient;
+    evaluateSelectionFeature!: EvaluateSelectionFeature;
     sclangProcess: cp.ChildProcess;
     lspTokenPath: string;
     outputChannel: vscode.OutputChannel;
+    readerSocket: dgram.Socket;
 
     processOptions()
     {
@@ -84,7 +86,7 @@ export class SuperColliderContext implements Disposable
     {
         if (this.sclangProcess)
         {
-            return this.sclangProcess;
+            this.sclangProcess.kill()
         }
 
         let options       = this.processOptions();
@@ -100,24 +102,30 @@ export class SuperColliderContext implements Disposable
 
     dispose()
     {
-        this.disposeProcess();
-        this.subscriptions.forEach((d) => { d.dispose(); });
-        this.subscriptions = [];
+        this.client.stop().then(() => {
+            this.disposeProcess();
+            // this.evaluateSelectionFeature.dispose();
+            this.subscriptions.forEach((d) => {
+                d.dispose();
+            });
+            this.subscriptions = [];
+        });
     }
 
     async activate(globalStoragePath: string, outputChannel: vscode.OutputChannel, workspaceState: vscode.Memento)
     {
+        let that           = this;
         this.outputChannel = outputChannel;
         outputChannel.show();
 
-        let sclangProcess = this.sclangProcess = this.createProcess();
+        const serverOptions: ServerOptions = function() {
+            // @TODO what if terminal launch fails?
 
-        const serverOptions: ServerOptions     = function() {
-                // @TODO what if terminal launch fails?
+            let sclangProcess = that.sclangProcess = that.createProcess();
 
-            const configuration = workspace.getConfiguration()
-            const readPort      = configuration.get<number>('supercollider.sclang.lspReadPort')
-            const writePort     = configuration.get<number>('supercollider.sclang.lspWritePort')
+            const configuration                    = workspace.getConfiguration()
+            const readPort                         = configuration.get<number>('supercollider.sclang.lspReadPort')
+            const writePort                        = configuration.get<number>('supercollider.sclang.lspWritePort')
 
             return new Promise<MessageTransports>((res, err) => {
                 let readerSocket = dgram.createSocket('udp4');
@@ -128,28 +136,35 @@ export class SuperColliderContext implements Disposable
 
                     const streamInfo: MessageTransports = {reader : reader, writer : writer, detached : false};
 
-                    sclangProcess.stdout.on('data', data => {
-                        let string = data.toString();
-                        if (string.indexOf('***LSP READY***') != -1)
-                        {
-                            res(streamInfo);
-                        }
-                        outputChannel.append(string);
+                    sclangProcess.stdout
+                        .on('data', data => {
+                            let string = data.toString();
+                            if (string.indexOf('***LSP READY***') != -1)
+                            {
+                                res(streamInfo);
+                            }
+                            outputChannel.append(string);
+                        })
+                        .on('end', () => {
+                            // outputChannel.append("sclang exited");
+                            reader.dispose();
+                            writer.dispose()
+                        })
+                        .on('error', (err) => {
+                            // outputChannel.append("sclang errored: " + err);
+                            reader.dispose();
+                            writer.dispose()
+                        });
+
+                    sclangProcess.on('exit', (code, signal) => {
+                        sclangProcess = null;
+                        reader.dispose();
+                        writer.dispose()
                     });
-
-                    sclangProcess.on('exit', (code, signal) => { sclangProcess = null; });
                 });
-            });
-        };
 
-        // @TODO Cache completions in vscode so we don't need to resolve in sclang?
-        let completionMiddleware: Middleware = {
-            provideCompletionItem : async function(this: void, document: TextDocument, position: Position, context: CompletionContext, token: CancellationToken, next: ProvideCompletionItemsSignature) {
-                return await next(document, position, context, token);
-            },
-            resolveCompletionItem : async function(this: void, item: CompletionItem, token: CancellationToken, next: ResolveCompletionItemSignature) {
-                return await next(item, token);
-            }
+                that.readerSocket = readerSocket;
+            });
         };
 
         const clientOptions: LanguageClientOptions = {
@@ -161,25 +176,18 @@ export class SuperColliderContext implements Disposable
         };
 
         let client                     = new LanguageClient('SuperColliderLanguageServer', 'SuperCollider Language Server', serverOptions, clientOptions, true);
-        client.trace                   = Trace.Verbose;
+        // client.trace                   = Trace.Verbose;
 
         const evaluateSelectionFeature = new EvaluateSelectionFeature(client, this);
-        evaluateSelectionFeature.registerLanguageProvider();
+        var [disposable, provider]     = evaluateSelectionFeature.registerLanguageProvider();
+        this.subscriptions.push(disposable);
+
         client.registerFeature(evaluateSelectionFeature);
 
-        client.onReady().then(function(x) {
-            client.onNotification('sclang/evalBegin', function(f) {
-                vscode.window.setStatusBarMessage('Eval...');
-            });
+        this.client                   = client;
+        this.evaluateSelectionFeature = evaluateSelectionFeature;
 
-            client.onNotification('sclang/evalEnd', function(f) {
-                vscode.window.setStatusBarMessage('Done');
-            });
-        });
-
-        this.client = client;
-
-        this.subscriptions.push(this.client.start());
+        await this.client.start();
     }
 
     executeCommand(command: string)

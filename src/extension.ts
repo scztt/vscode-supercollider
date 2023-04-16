@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+
 import * as help from './commands/help'
 import {SuperColliderContext} from './context';
 
@@ -19,9 +20,9 @@ export async function activate(context)
     context.subscriptions.push(vscode.commands.registerCommand(
         'supercollider.restart',
         async () => {
-        supercolliderContext.dispose();
-        await supercolliderContext.activate(context.globalStoragePath, outputChannel, context.workspaceState);
-    }));
+            await supercolliderContext.client.stop();
+            await supercolliderContext.client.start();
+        }));
 
     context.subscriptions.push(vscode.commands.registerCommand(
         'supercollider.bootServer',
@@ -92,7 +93,6 @@ export async function activate(context)
         'supercollider.stopRecording',
         async () => {
             supercolliderContext.executeCommand('supercollider.internal.stopRecording')}));
-    
 
     help.activate(supercolliderContext);
 

@@ -4,9 +4,9 @@ import {MarkdownString,
         TextEditor} from 'vscode';
 import * as uuid from 'vscode-languageclient/lib/common/utils/uuid';
 import * as vscodelc from 'vscode-languageclient/node';
-import {ProtocolRequestType,
+import {HoverMiddleware, ProtocolRequestType,
         StaticRegistrationOptions,
-        TextDocumentFeature,
+        TextDocumentLanguageFeature,
         TextDocumentRegistrationOptions,
         WorkDoneProgressOptions} from 'vscode-languageclient/node';
 
@@ -26,20 +26,20 @@ const evaluateDecorator = vscode.window.createTextEditorDecorationType({
     backgroundColor : new vscode.ThemeColor('inputOption.activeBackground'),
     isWholeLine : true,
 });
-const successDecorator = vscode.window.createTextEditorDecorationType({
+const successDecorator  = vscode.window.createTextEditorDecorationType({
     // backgroundColor : new vscode.ThemeColor('inputValidation.infoBackground'),
     overviewRulerColor : new vscode.ThemeColor('inputValidation.infoBackground'),
     outline : 'border-left-width: 1px',
     isWholeLine : true,
 });
-const errorDecorator   = vscode.window.createTextEditorDecorationType({
+const errorDecorator    = vscode.window.createTextEditorDecorationType({
     backgroundColor : new vscode.ThemeColor('inputValidation.errorBackground'),
     overviewRulerColor : new vscode.ThemeColor('inputValidation.infoBackground'),
     outline : 'border-left-width: 1px',
     isWholeLine : true,
-  });
+   });
 let evaluateCount       = 0;
-const decoratorTimeout = 5000;
+const decoratorTimeout  = 5000;
 
 // Start and end execution actions
 function onEndEvaluate(textEditor: TextEditor, range: Range, responseText: string, isError: boolean)
@@ -66,7 +66,7 @@ function onEndEvaluate(textEditor: TextEditor, range: Range, responseText: strin
 
 function onStartEvaluate(textEditor: TextEditor, range: Range)
 {
-    let currentEvaluateCount = ++ evaluateCount;
+    let currentEvaluateCount = ++evaluateCount;
 
     textEditor.setDecorations(successDecorator, [])
     textEditor.setDecorations(errorDecorator, [])
@@ -110,8 +110,8 @@ function currentDocumentLine()
     let startLine = activeTextEditor.document.lineAt(selection.start);
     let endLine   = activeTextEditor.document.lineAt(selection.end);
     let range     = new Range(
-            startLine.range.start,
-            endLine.range.end);
+        startLine.range.start,
+        endLine.range.end);
 
     return range;
 }
@@ -174,7 +174,8 @@ function currentDocumentRegion()
     }
 }
 
-interface EvaluateSelectionProvider {
+interface EvaluateSelectionProvider
+{
     evaluateString(document: vscode.TextDocument, range: vscode.Selection): vscode.ProviderResult<EvaluateSelectionRequest.EvaluateSelectionResult>;
 }
 
@@ -188,10 +189,10 @@ export function registerEvaluateProvider(context: SuperColliderContext, provider
             (inputRange) => {
                 const document = vscode.window.activeTextEditor.document;
                 const range    = (inputRange != null)
-                    ? new vscode.Selection(
-                          new vscode.Position(inputRange['start']['line'], inputRange['start']['character']),
-                          new vscode.Position(inputRange['end']['line'], inputRange['end']['character']))
-                    : currentDocumentSelection();
+                                   ? new vscode.Selection(
+                                      new vscode.Position(inputRange['start']['line'], inputRange['start']['character']),
+                                      new vscode.Position(inputRange['end']['line'], inputRange['end']['character']))
+                                   : currentDocumentSelection();
 
                 if (range !== null)
                 {
@@ -228,10 +229,16 @@ export function registerEvaluateProvider(context: SuperColliderContext, provider
     })
 }
 
-interface EvaluateSelectionOptions extends WorkDoneProgressOptions {
+interface EvaluateSelectionOptions extends WorkDoneProgressOptions
+{
 }
 
-interface EvaluateSelectionRegistrationOptions extends EvaluateSelectionOptions, TextDocumentRegistrationOptions, StaticRegistrationOptions {
+interface EvaluateSelectionRegistrationOptions extends EvaluateSelectionOptions, TextDocumentRegistrationOptions, StaticRegistrationOptions
+{
+}
+
+interface EvaluateSelectionMiddleware
+{
 }
 
 namespace EvaluateSelectionRequest
@@ -252,7 +259,7 @@ export interface EvaluateSelectionResult {
 export const type = new ProtocolRequestType<EvaluateSelectionParams, EvaluateSelectionResult, never, void, EvaluateSelectionRegistrationOptions>(method);
 }
 
-async function evaluateString(client: vscodelc.BaseLanguageClient, document: vscode.TextDocument, range: Range): Promise<EvaluateSelectionRequest.EvaluateSelectionResult>
+async function evaluateString(client, document: vscode.TextDocument, range: Range): Promise<EvaluateSelectionRequest.EvaluateSelectionResult>
 {
     const activeTextEditor = vscode.window.activeTextEditor;
 
@@ -295,7 +302,8 @@ async function evaluateString(client: vscodelc.BaseLanguageClient, document: vsc
 
 // @TODO A lot of boilerplate is required to register this as a feature, but in the end we just trigger the commands roughly the same way.
 // Is there benefit here, apart from that we can specify client capabilities and pass options back to our client (which we do not do now anyway...)?
-export class EvaluateSelectionFeature extends TextDocumentFeature<EvaluateSelectionOptions|boolean, EvaluateSelectionRegistrationOptions, EvaluateSelectionProvider>
+export class EvaluateSelectionFeature extends TextDocumentLanguageFeature<
+    EvaluateSelectionOptions|boolean, EvaluateSelectionRegistrationOptions, EvaluateSelectionProvider, EvaluateSelectionMiddleware>
 {
     _context: SuperColliderContext;
 
@@ -326,7 +334,7 @@ export class EvaluateSelectionFeature extends TextDocumentFeature<EvaluateSelect
     {
         const provider: EvaluateSelectionProvider = {
             evaluateString : (document: vscode.TextDocument, range: vscode.Selection) => {
-                const client                  = this._client;
+                const client                   = this._client;
 
                 const provideEvaluateSelection = (document: vscode.TextDocument, range: vscode.Selection) => {
                     return evaluateString(client, document, range);
