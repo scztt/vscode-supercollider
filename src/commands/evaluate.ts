@@ -4,7 +4,8 @@ import {MarkdownString,
         TextEditor} from 'vscode';
 import * as uuid from 'vscode-languageclient/lib/common/utils/uuid';
 import * as vscodelc from 'vscode-languageclient/node';
-import {ProtocolRequestType,
+import {integer,
+        ProtocolRequestType,
         StaticRegistrationOptions,
         TextDocumentLanguageFeature,
         TextDocumentRegistrationOptions,
@@ -23,27 +24,32 @@ function ensure(target, key)
 
 // These decorators are applied to evaluated regions of code during/after execution.
 const evaluateDecorator = vscode.window.createTextEditorDecorationType({
-    backgroundColor : new vscode.ThemeColor('inputOption.activeBackground'),
+    backgroundColor : "rgba(50, 50, 255, 0.05)",
     isWholeLine : true,
+    rangeBehavior : vscode.DecorationRangeBehavior.ClosedClosed
 });
+
 const successDecorator  = vscode.window.createTextEditorDecorationType({
-    // backgroundColor : new vscode.ThemeColor('inputValidation.infoBackground'),
-    overviewRulerColor : new vscode.ThemeColor('inputValidation.infoBackground'),
-    outline : 'border-left-width: 1px',
+    backgroundColor : "rgba(0, 255, 200, 0.05)",
     isWholeLine : true,
-});
+    rangeBehavior : vscode.DecorationRangeBehavior.ClosedClosed,
+ });
+
 const errorDecorator    = vscode.window.createTextEditorDecorationType({
-    backgroundColor : new vscode.ThemeColor('inputValidation.errorBackground'),
-    overviewRulerColor : new vscode.ThemeColor('inputValidation.infoBackground'),
-    outline : 'border-left-width: 1px',
+    backgroundColor : "rgba(255, 0, 0, 0.05)",
     isWholeLine : true,
+    rangeBehavior : vscode.DecorationRangeBehavior.ClosedClosed
    });
-let evaluateCount       = 0;
+
+let evaluateUID         = 0;
+
+const configuration     = vscode.workspace.getConfiguration()
 const decoratorTimeout  = 5000;
 
 // Start and end execution actions
-function onEndEvaluate(textEditor: TextEditor, range: Range, responseText: string, isError: boolean)
+async function onEndEvaluate(textEditor: TextEditor, range: Range, responseText: string, isError: boolean, flashDelay: Promise<void>)
 {
+    await flashDelay;
     textEditor.setDecorations(evaluateDecorator, []);
 
     if (isError)
@@ -51,7 +57,7 @@ function onEndEvaluate(textEditor: TextEditor, range: Range, responseText: strin
         textEditor.setDecorations(successDecorator, [])
         textEditor.setDecorations(errorDecorator, [ {
                                       range : range,
-                                      hoverMessage : new MarkdownString(responseText)
+                                      hoverMessage : new MarkdownString(responseText),
                                   } ]);
     }
     else
@@ -66,7 +72,7 @@ function onEndEvaluate(textEditor: TextEditor, range: Range, responseText: strin
 
 function onStartEvaluate(textEditor: TextEditor, range: Range)
 {
-    let currentEvaluateCount = ++evaluateCount;
+    let currentEvaluateUID = ++evaluateUID;
 
     textEditor.setDecorations(successDecorator, [])
     textEditor.setDecorations(errorDecorator, [])
@@ -77,16 +83,21 @@ function onStartEvaluate(textEditor: TextEditor, range: Range)
 
     setTimeout(() => {
         // Execution has timed out, so clear - don't clear if we've had another evaluate in the mean time
-        if (evaluateCount == currentEvaluateCount)
+        if (evaluateUID == currentEvaluateUID)
         {
             textEditor.setDecorations(evaluateDecorator, []);
         }
     }, decoratorTimeout);
 
+    const decoratorFlashTime                = configuration.get<integer>('supercollider.evaluate.flash_time', 50);
+    let evaluateFlashDelay                  = new Promise<void>((res, err) => {
+        setTimeout(res, decoratorFlashTime);
+    });
+
     return (text: string, isError: boolean) => {
-        if (evaluateCount == currentEvaluateCount)
+        if (evaluateUID == currentEvaluateUID)
         {
-            onEndEvaluate(textEditor, range, text, isError)
+            onEndEvaluate(textEditor, range, text, isError, evaluateFlashDelay)
         }
     }
 }
@@ -128,8 +139,10 @@ function currentDocumentRegion()
     let startLine = document.lineAt(selection.start);
     let endLine   = document.lineAt(selection.end);
 
-    let startRE   = new RegExp(/^\(\W*(\/\/.*)?$/);
-    let endRE     = new RegExp(/^\)\W*\;?\s*(\/\/.*)?$/);
+    let startRE   = new RegExp(/^\(\s*(\/\/)?\s*(.*)\s*$/);
+    let endRE     = new RegExp(/^\)\s*\;?\s*(\/\/.*)?$/);
+
+    let nestDepth = 1;
 
     while (!startRE.test(startLine.text))
     {
@@ -146,8 +159,23 @@ function currentDocumentRegion()
 
     if (startLine !== null)
     {
-        while (!endRE.test(endLine.text))
+        while (true)
         {
+            if (startRE.test(endLine.text))
+            {
+                nestDepth++;
+            }
+
+            if (endRE.test(endLine.text))
+            {
+                nestDepth--;
+            }
+
+            if (nestDepth == 0)
+            {
+                break;
+            }
+
             if (endLine.lineNumber == document.lineCount - 1)
             {
                 endLine = null;
@@ -176,7 +204,7 @@ function currentDocumentRegion()
 
 interface EvaluateSelectionProvider
 {
-    evaluateString(document: vscode.TextDocument, range: vscode.Selection): vscode.ProviderResult<EvaluateSelectionRequest.EvaluateSelectionResult>;
+    evaluateString(document: vscode.TextDocument, range: Range): vscode.ProviderResult<EvaluateSelectionRequest.EvaluateSelectionResult>;
 }
 
 export function registerEvaluateProvider(context: SuperColliderContext, provider): vscode.Disposable
@@ -187,12 +215,17 @@ export function registerEvaluateProvider(context: SuperColliderContext, provider
         vscode.commands.registerCommand(
             'supercollider.evaluateSelection',
             (inputRange) => {
-                const document = vscode.window.activeTextEditor.document;
-                const range    = (inputRange != null)
-                                   ? new vscode.Selection(
-                                      new vscode.Position(inputRange['start']['line'], inputRange['start']['character']),
-                                      new vscode.Position(inputRange['end']['line'], inputRange['end']['character']))
-                                   : currentDocumentSelection();
+                const document   = vscode.window.activeTextEditor.document;
+                let range: Range = (inputRange != null)
+                                     ? new vscode.Selection(
+                                           new vscode.Position(inputRange['start']['line'], inputRange['start']['character']),
+                                           new vscode.Position(inputRange['end']['line'], inputRange['end']['character']))
+                                     : currentDocumentSelection();
+
+                if (range == null || range.isEmpty)
+                {
+                    range = currentDocumentLine();
+                }
 
                 if (range !== null)
                 {
@@ -279,20 +312,20 @@ async function evaluateString(client, document: vscode.TextDocument, range: Rang
     result.then((result) => {
         if (result.result !== undefined)
         {
-            const prefix = '⇒ ';
-            vscode.window.showInformationMessage(prefix + result.result);
+            // const prefix = '⇒ ';
+            // vscode.window.showInformationMessage(prefix + result.result);
             finishFunc(result.result, false);
         }
         else if (result.compileError !== undefined)
         {
-            const prefix = '⇏ ';
-            vscode.window.showErrorMessage(prefix + result.compileError);
+            // const prefix = '⇏ ';
+            // vscode.window.showErrorMessage(prefix + result.compileError);
             finishFunc(result.compileError, true);
         }
         else if (result.error !== undefined)
         {
-            const prefix = '⇏ ';
-            vscode.window.showErrorMessage(prefix + result.error);
+            // const prefix = '⇏ ';
+            // vscode.window.showErrorMessage(prefix + result.error);
             finishFunc(result.error, true);
         }
     });
@@ -333,10 +366,10 @@ export class EvaluateSelectionFeature extends TextDocumentLanguageFeature<
     registerLanguageProvider(): [ vscode.Disposable, EvaluateSelectionProvider ]
     {
         const provider: EvaluateSelectionProvider = {
-            evaluateString : (document: vscode.TextDocument, range: vscode.Selection) => {
+            evaluateString : (document: vscode.TextDocument, range: Range) => {
                 const client                   = this._client;
 
-                const provideEvaluateSelection = (document: vscode.TextDocument, range: vscode.Selection) => {
+                const provideEvaluateSelection = (document: vscode.TextDocument, range: Range) => {
                     return evaluateString(client, document, range);
                 };
 
