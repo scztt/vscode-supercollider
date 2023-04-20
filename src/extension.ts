@@ -5,7 +5,7 @@ import {SuperColliderContext} from './context';
 
 export async function activate(context)
 {
-    const outputChannel = vscode.window.createOutputChannel('supercollider');
+    const outputChannel = vscode.window.createOutputChannel('supercollider', 'supercollider-log');
     context.subscriptions.push(outputChannel);
 
     const supercolliderContext = new SuperColliderContext;

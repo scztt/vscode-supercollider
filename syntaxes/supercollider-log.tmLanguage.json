@@ -1,0 +1,162 @@
+{
+  "fileTypes": [],
+  "foldingStartMarker": "\\{|\\/\\*|^\\(",
+  "foldingStopMarker": "\\}|\\*\\/|^\\)",
+  "name": "SuperCollider-log",
+  "repository": {
+    "symbol": {
+      "begin": "'",
+      "end": "'",
+      "name": "entity.name.symbol.supercollider",
+      "patterns": [
+        {
+          "match": "\\\\.",
+          "name": "constant.character.escape.supercollider"
+        }
+      ]
+    },
+    "string": {
+      "begin": "\"",
+      "end": "\"",
+      "name": "string.quoted.double.supercollider",
+      "patterns": [
+        {
+          "match": "\\\\.",
+          "name": "constant.character.escape.supercollider"
+        }
+      ]
+    },
+    "numeric": {
+      "patterns": [
+        {
+          "match": "\\b(0[xX][0-9A-Fa-f](?>_?[0-9A-Fa-f])*|\\d(?>_?\\d)*(\\.(?![^[:space:][:digit:]])(?>_?\\d)*)?([eE][-+]?\\d(?>_?\\d)*)?|0[bB][01]+)\\b",
+          "name": "constant.numeric.supercollider"
+        }
+      ]
+    },
+    "environmentVariable": {
+      "patterns": [
+        {
+          "name": "variable.environment.supercollider",
+          "match": "~[a-z][A-Za-z0-9_]*\\b"
+        }
+      ]
+    },
+    "variable": {
+      "patterns": [
+        {
+          "name": "variable.supercollider",
+          "match": "([a-z][a-zA-Z0-9_]*)\\b"
+        }
+      ]
+    },
+    "class": {
+      "patterns": [
+        {
+          "captures": {
+            "1": {
+              "name": "entity.name.class.supercollider"
+            }
+          },
+          "comment": "[^a-zA-Z0-9\\\\]([A-Z_]{1}[a-zA-Z0-9_]*)[^a-zA-Z0-9_]",
+          "match": "\\b([A-Z_]{1}[a-zA-Z0-9_]*)[^a-zA-Z0-9_]"
+        }
+      ]
+    },
+    "callstack": {
+      "begin": "^\\W*((PROTECTED )?CALL STACK):$",
+      "beginCaptures": {
+        "1": {
+          "name": "markup.bold"
+        }
+      },
+      "while": "^\\t{1}",
+      "patterns": [
+        {
+          "include": "#callstack_frame"
+        }
+      ]
+    },
+    "callstack_frame": {
+      "begin": "(< FunctionDef in Method )?(a )?([A-Z][A-Za-z0-9_]*):?([A-Za-z0-9_]+)?( >)?\\b(\\W+(0x[0-9a-f]+))?\\b",
+      "beginCaptures": {
+        "3": {
+          "name": "entity.name.class.supercollider"
+        },
+        "4": {
+          "name": "meta.function.method.supercollider"
+        },
+        "6": {
+          "name": "constant.numeric.supercollider"
+        }
+      },
+      "while": "\\G\\t{1}",
+      "patterns": [
+        {
+          "include": "#callstack_variable"
+        },
+        {
+          "include": "#source_statement"
+        }
+      ]
+    },
+    "callstack_variable": {
+      "begin": "(arg|var)\\W+([a-z][A-Za-z0-9_]+) = ",
+      "beginCaptures": {
+        "1": {
+          "name": "keyword.control.supercollider"
+        },
+        "2": {
+          "name": "variable.supercollider"
+        }
+      },
+      "end": "\\n"
+    },
+    "source_statement": {
+      "begin": "(sourceCode) = ",
+      "beginCaptures": {
+        "1": {
+          "name": "keyword.control.supercollider"
+        }
+      },
+      "end": "\\n"
+    }
+  },
+  "patterns": [
+    {
+      "include": "#protected_callstack"
+    },
+    {
+      "include": "#callstack"
+    },
+    {
+      "name": "markup.bold",
+      "match": "^\\*\\*\\*.*"
+    },
+    {
+      "name": "token.warn-token",
+      "match": "^WARNING:.*"
+    },
+    {
+      "name": "token.error-token",
+      "match": "^(\\^\\^ )?ERROR:.*"
+    },
+    {
+      "name": "token.info-token",
+      "match": "^> .*"
+    },
+    {
+      "name": "markup.italic",
+      "match": "^\\[.+\\].*"
+    },
+    {
+      "name": "constant.other.reference.link.markdown",
+      "match": "\\b[a-z]+:/[^\\s]+(/[^\\s]+)*\\b"
+    },
+    {
+      "name": "markup.bold",
+      "match": "^\\w*(RECEIVER:|ARGS:|PATH:)"
+    }
+  ],
+  "scopeName": "source.supercollider-log"
+}
