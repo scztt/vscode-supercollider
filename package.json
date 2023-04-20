@@ -83,21 +83,20 @@
         ],
         "keybindings": [
             {
-                "command": "supercollider.evaluateSelection",
-                "key": "ctrl+return",
-                "mac": "cmd+enter",
-                "when": "editorHasSelection && resourceExtname == .scd"
-            },
-            {
                 "command": "supercollider.evaluateRegion",
                 "key": "ctrl+return",
                 "mac": "cmd+enter",
-                "when": "!editorHasSelection && resourceExtname == .scd"
+                "when": "editorLangId == 'supercollider'"
+            },
+            {
+                "command": "supercollider.evaluateSelection",
+                "key": "shift+enter",
+                "when": "editorHasSelection && editorLangId == 'supercollider'"
             },
             {
                 "command": "supercollider.evaluateLine",
                 "key": "shift+enter",
-                "when": "resourceExtname == .scd"
+                "when": "!editorHasSelection && editorLangId == 'supercollider'"
             },
             {
                 "command": "supercollider.cmdPeriod",
@@ -207,7 +206,8 @@
                 "id": "supercollider",
                 "aliases": [
                     "SuperCollider",
-                    "supercollider"
+                    "supercollider",
+                    "sclang"
                 ],
                 "extensions": [
                     ".sc",
@@ -215,6 +215,15 @@
                     ".schelp"
                 ],
                 "configuration": "./language-configuration.json"
+            },
+            {
+                "id": "supercollider-log",
+                "aliases": [
+                    "SuperCollider-log",
+                    "supercollider-log"
+                ],
+                "extensions": [],
+                "configuration": "./log-language-configuration.json"
             }
         ],
         "grammars": [
@@ -222,6 +231,11 @@
                 "language": "supercollider",
                 "scopeName": "source.supercollider",
                 "path": "./syntaxes/supercollider.tmLanguage.json"
+            },
+            {
+                "language": "supercollider-log",
+                "scopeName": "source.supercollider-log",
+                "path": "./syntaxes/supercollider-log.tmLanguage.json"
             }
         ]
     },
