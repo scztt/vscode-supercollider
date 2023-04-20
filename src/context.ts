@@ -2,21 +2,12 @@ import * as cp from 'child_process';
 import * as dgram from 'dgram';
 import * as fs from 'fs';
 import * as vscode from 'vscode';
-import {CancellationToken,
-        CompletionContext,
-        CompletionItem,
-        Disposable,
-        Position,
-        TextDocument,
+import {Disposable,
         workspace} from 'vscode';
-import {Trace} from 'vscode-jsonrpc';
 import {ExecuteCommandRequest,
         LanguageClient,
         LanguageClientOptions,
         MessageTransports,
-        Middleware,
-        ProvideCompletionItemsSignature,
-        ResolveCompletionItemSignature,
         ServerOptions} from 'vscode-languageclient/node';
 
 import {EvaluateSelectionFeature} from './commands/evaluate.js';
@@ -24,7 +15,6 @@ import {UDPMessageReader,
         UDPMessageWriter} from './util/readerWriter.js';
 
 const lspAddress    = '127.0.0.1';
-const execDelimiter = '\n' + String.fromCharCode(0x1b);
 
 export class SuperColliderContext implements Disposable
 {
