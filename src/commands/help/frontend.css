@@ -21,5 +21,14 @@ a.menu-link {
 }
 
 #menubar {
-    background-color: var(--vscode-sideBarSectionHeader-background);
+    background-color: var(--vscode-menu-background);
+}
+
+.submenu, #toc {
+    background-color: var(--vscode-menu-background);
+}
+
+.note, .warning {
+    color: var(--vscode-statusBarItem-warningForeground);
+    background-color: var(--vscode-statusBarItem-warningBackground);
 }

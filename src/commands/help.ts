@@ -55,7 +55,7 @@ function makeHTML(path: string)
         <!DOCTYPE html>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>C++ Reference</title>
+        <title>SuperCollider Help</title>
         <style>
         body, html
         {
@@ -74,12 +74,25 @@ function makeHTML(path: string)
 
         <script>
             window.onload = () => {
-                // Add the postMessage handler
                 const vscode = acquireVsCodeApi();
+                var frame = document.getElementById('frame');
+
+                for (const command of ['selectAll', 'copy', 'paste', 'cut', 'undo', 'redo']) {
+                    document.addEventListener(command, (e) => {
+                        frame.contentWindow.postMessage({'command': 'execCommand', 'data': command}, '*');
+                        frame.contentDocument.execCommand(command);
+                    });
+                }
                 window.addEventListener('message', (event) => {
                     // Check the origin of the message to ensure it's from a trusted source
                     if (event.origin == 'http://127.0.0.1:8080') {
+                        if (event.data.command == 'open-local-file') {
                         vscode.postMessage(event.data)
+                        } else if (event.data.command == 'keyboard-rebroadcast') {
+                            const type = event.data.type;
+                            delete event.data.type;
+                            window.dispatchEvent(new KeyboardEvent(type, event.data));
+                        }
                     }
                 });
                 const style = document.getElementsByTagName('html')[0].style;
@@ -92,7 +105,6 @@ function makeHTML(path: string)
                     }
                 }
                 
-                var frame = document.getElementById('frame');
                 frame.onload = () => {
                     frame.contentWindow.postMessage({
                         command: 'init',
