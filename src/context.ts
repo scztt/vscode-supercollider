@@ -185,6 +185,10 @@ export class SuperColliderContext implements Disposable
                 fileEvents : workspace.createFileSystemWatcher('**/*.*'),
             },
             outputChannel : outputChannel,
+            markdown : {
+                supportHtml : true,
+                isTrusted : true
+            }
         };
 
         let client                     = new LanguageClient('SuperColliderLanguageServer', 'SuperCollider Language Server', serverOptions, clientOptions, true);
