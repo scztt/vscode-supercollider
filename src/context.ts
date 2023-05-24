@@ -14,7 +14,7 @@ import {EvaluateSelectionFeature} from './commands/evaluate.js';
 import {UDPMessageReader,
         UDPMessageWriter} from './util/readerWriter.js';
 
-const lspAddress    = '127.0.0.1';
+const lspAddress = '127.0.0.1';
 
 export class SuperColliderContext implements Disposable
 {
@@ -26,7 +26,7 @@ export class SuperColliderContext implements Disposable
     outputChannel: vscode.OutputChannel;
     readerSocket: dgram.Socket;
 
-    processOptions()
+    processOptions(readPort: number, writePort: number)
     {
         const configuration               = workspace.getConfiguration()
 
@@ -34,9 +34,6 @@ export class SuperColliderContext implements Disposable
         const sclangArgs                  = configuration.get<Array<string>>('supercollider.sclang.args')
         const sclangEnv                   = configuration.get<Object>('supercollider.sclang.environment')
         const sclangConfYaml              = configuration.get<string>('supercollider.sclang.confYaml')
-
-        const readPort                    = configuration.get<number>('supercollider.sclang.lspReadPort')
-        const writePort                   = configuration.get<number>('supercollider.sclang.lspWritePort')
 
         let env                           = process.env;
         env['SCLANG_LSP_ENABLE']          = '1';
@@ -72,14 +69,14 @@ export class SuperColliderContext implements Disposable
         }
     }
 
-    createProcess()
+    createProcess(readPort: number, writePort: number)
     {
         if (this.sclangProcess)
         {
             this.sclangProcess.kill()
         }
 
-        let options       = this.processOptions();
+        let options       = this.processOptions(readPort, writePort);
         let sclangProcess = cp.spawn(options.command, options.args, options.options);
 
         if (!sclangProcess || !sclangProcess.pid)
@@ -111,20 +108,47 @@ export class SuperColliderContext implements Disposable
         const serverOptions: ServerOptions = function() {
             // @TODO what if terminal launch fails?
 
-            let sclangProcess = that.sclangProcess = that.createProcess();
-
-            const configuration                    = workspace.getConfiguration()
-            const readPort                         = configuration.get<number>('supercollider.sclang.lspReadPort')
-            const writePort                        = configuration.get<number>('supercollider.sclang.lspWritePort')
+            const configuration = workspace.getConfiguration()
 
             return new Promise<MessageTransports>((res, err) => {
-                let readerSocket = dgram.createSocket('udp4');
+                let readerSocket = new Promise<dgram.Socket>((resolve, reject) => {
+                    let socket = dgram.createSocket('udp4');
+                    socket.bind(0, lspAddress, () => {
+                        resolve(socket);
+                    })
+                });
+                let writerSocket = new Promise<dgram.Socket>((resolve, reject) => {
+                                       let socket = dgram.createSocket('udp4');
+                                       socket.bind({
+                                           address : lspAddress,
+                                           exclusive : false
+                                       },
+                                                   () => {
+                                                       resolve(socket);
+                                                   })
+                                   }).then((socket) => {
+                    // SUBTLE: SuperCollider cannot open port=0 (e.g. OS assigneded) ports. So, we stand a better chance of
+                    //         finding an open port by opening on our end, then immediately closing and pointing SC that one.
+                    var port = socket.address().port;
+                    return new Promise<number>((resolve, reject) => {
+                                                   socket.close(() => {
+                                                       resolve(port);
+                                                   })})
+                });
 
-                readerSocket.bind(readPort, lspAddress, () => {
-                    let reader                          = new UDPMessageReader(readerSocket);
-                    let writer                          = new UDPMessageWriter(readerSocket, writePort, lspAddress)
+                Promise.all([ readerSocket, writerSocket ]).then((sockets) => {
 
-                    const streamInfo: MessageTransports = {reader : reader, writer : writer, detached : false};
+                    let socket        = sockets[0];
+                    that.readerSocket = socket;
+
+                    let readerPort    = socket.address().port;
+                    let writerPort    = sockets[1];
+                    let reader        = new UDPMessageReader(socket);
+                    let writer        = new UDPMessageWriter(socket, writerPort, lspAddress)
+
+                    let sclangProcess = that.sclangProcess = that.createProcess(readerPort, writerPort);
+
+                    const streamInfo: MessageTransports    = {reader : reader, writer : writer, detached : false};
 
                     sclangProcess.stdout
                         .on('data', data => {
@@ -152,8 +176,6 @@ export class SuperColliderContext implements Disposable
                         writer.dispose()
                     });
                 });
-
-                that.readerSocket = readerSocket;
             });
         };
 
