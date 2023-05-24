@@ -96,6 +96,11 @@
         ],
         "commands": [
             {
+                "command": "supercollider.updateLanguageServer",
+                "title": "Update LanguageServer.quark to most recent supported version.",
+                "category": "SuperCollider"
+            },
+            {
                 "command": "supercollider.restart",
                 "title": "Restart sclang",
                 "category": "SuperCollider"

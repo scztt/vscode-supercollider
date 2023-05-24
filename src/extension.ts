@@ -1,4 +1,9 @@
+import * as cp from 'child_process';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import * as vscode from 'vscode';
+import {workspace} from 'vscode';
 
 import * as help from './commands/help'
 import {SuperColliderContext} from './context';
@@ -27,18 +32,61 @@ export async function activate(context: vscode.ExtensionContext)
     context.subscriptions.push(vscode.commands.registerCommand('supercollider.activate', async () => {}));
 
     context.subscriptions.push(vscode.commands.registerCommand(
+        'supercollider.updateLanguageServer',
+        async () => {
+            const configuration  = workspace.getConfiguration();
+            const sclangPath     = configuration.get<string>('supercollider.sclang.cmd');
+            const sclangConfYaml = configuration.get<string>('supercollider.sclang.confYaml');
+
+            await new Promise((res, err) => {
+                                  fs.access(sclangPath, fs.constants.X_OK, () => {res(true);})});
+
+            const tempFilePath = await new Promise<string>((res, err) => {
+                                                               fs.mkdtemp(
+                                                                   path.join(os.tmpdir(), 'vscode-supercollider'),
+                                                                   (errorResult, folder: string) => {
+                                                                       if (errorResult)
+                                                                       {
+                                                                           err(errorResult);
+                                                                       }
+                                                                       else
+                                                                       {
+                                                                           let finalPath = path.join(folder, 'boostrap.scd');
+                                                                           fs.writeFile(
+                                                                               finalPath,
+                                                                               `
+                                                                               try { Quarks.install("https://github.com/scztt/LanguageServer.quark") };
+                                                                               try { Quarks.update("https://github.com/scztt/LanguageServer.quark") };
+                                                                               0.exit;
+                                                                               `,
+                                                                               null,
+                                                                               () => {res(finalPath)});
+                                                                       }
+                                                                   })});
+
+            const args         = [ '-l', sclangConfYaml, tempFilePath ];
+            let sclangProcess  = cp.spawn(sclangPath, args);
+
+            await new Promise((res) => {
+                sclangProcess.on('exit', () => {
+                    res(true);
+                });
+            })
+        }));
+
+    context.subscriptions.push(vscode.commands.registerCommand(
         'supercollider.restart',
         async () => {
             if (!supercolliderContext.activated)
             {
                 await doActivate();
             }
-            else if (supercolliderContext.client.isRunning())
+            else if (!!supercolliderContext.client && supercolliderContext.client.isRunning())
             {
                 await supercolliderContext.client.stop();
             }
-            
-            if (!supercolliderContext.client.isRunning()) 
+
+            if (!supercolliderContext.client.isRunning())
             {
                 await supercolliderContext.client.start();
             }

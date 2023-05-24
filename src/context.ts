@@ -90,6 +90,8 @@ export class SuperColliderContext implements Disposable
 
     async cleanup()
     {
+        this.activated = false;
+
         if (this.client.isRunning())
         {
             await this.client.stop();
