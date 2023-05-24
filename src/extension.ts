@@ -3,7 +3,7 @@ import * as vscode from 'vscode';
 import * as help from './commands/help'
 import {SuperColliderContext} from './context';
 
-export async function activate(context)
+export async function activate(context: vscode.ExtensionContext)
 {
     const outputChannel = vscode.window.createOutputChannel('supercollider', 'supercollider-log');
     context.subscriptions.push(outputChannel);
@@ -11,17 +11,37 @@ export async function activate(context)
     const supercolliderContext = new SuperColliderContext;
     context.subscriptions.push(supercolliderContext);
 
+    const doActivate = async () => {
+        try
+        {
+            await supercolliderContext.activate(context.globalStoragePath, outputChannel, context.workspaceState);
+        }
+        catch (error)
+        {
+            outputChannel.append(error)
+        }
+    };
+
     // An empty place holder for the activate command, otherwise we'll get an
     // "command is not registered" error.
-    context.subscriptions.push(vscode.commands.registerCommand(
-        'supercollider.activate',
-        async () => {}));
+    context.subscriptions.push(vscode.commands.registerCommand('supercollider.activate', async () => {}));
 
     context.subscriptions.push(vscode.commands.registerCommand(
         'supercollider.restart',
         async () => {
-            await supercolliderContext.client.stop();
-            await supercolliderContext.client.start();
+            if (!supercolliderContext.activated)
+            {
+                await doActivate();
+            }
+            else if (supercolliderContext.client.isRunning())
+            {
+                await supercolliderContext.client.stop();
+            }
+            
+            if (!supercolliderContext.client.isRunning()) 
+            {
+                await supercolliderContext.client.start();
+            }
         }));
 
     context.subscriptions.push(vscode.commands.registerCommand(
@@ -96,7 +116,7 @@ export async function activate(context)
 
     help.activate(supercolliderContext);
 
-    await supercolliderContext.activate(context.globalStoragePath, outputChannel, context.workspaceState);
+    doActivate();
 }
 exports.activate = activate;
 

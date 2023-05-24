@@ -25,6 +25,7 @@ export class SuperColliderContext implements Disposable
     lspTokenPath: string;
     outputChannel: vscode.OutputChannel;
     readerSocket: dgram.Socket;
+    activated: boolean = false;
 
     processOptions(readPort: number, writePort: number)
     {
@@ -87,21 +88,30 @@ export class SuperColliderContext implements Disposable
         return sclangProcess;
     }
 
-    dispose()
+    async cleanup()
     {
-        this.client.stop().then(() => {
-            this.disposeProcess();
-            // this.evaluateSelectionFeature.dispose();
-            this.subscriptions.forEach((d) => {
-                d.dispose();
-            });
-            this.subscriptions = [];
+        if (this.client.isRunning())
+        {
+            await this.client.stop();
+        }
+            
+        this.disposeProcess();
+        // this.evaluateSelectionFeature.dispose();
+        this.subscriptions.forEach((d) => {
+            d.dispose();
         });
+        this.subscriptions = [];
+    };
+
+    dispose() {
+        return this.cleanup()
     }
 
     async activate(globalStoragePath: string, outputChannel: vscode.OutputChannel, workspaceState: vscode.Memento)
     {
         let that           = this;
+        this.cleanup();
+
         this.outputChannel = outputChannel;
         outputChannel.show();
 
@@ -137,7 +147,6 @@ export class SuperColliderContext implements Disposable
                 });
 
                 Promise.all([ readerSocket, writerSocket ]).then((sockets) => {
-
                     let socket        = sockets[0];
                     that.readerSocket = socket;
 
@@ -148,7 +157,12 @@ export class SuperColliderContext implements Disposable
 
                     let sclangProcess = that.sclangProcess = that.createProcess(readerPort, writerPort);
 
-                    const streamInfo: MessageTransports    = {reader : reader, writer : writer, detached : false};
+                    if (!sclangProcess)
+                    {
+                        err("Problem launching sclang executable. Check your settings to ensure `supercollider.sclang.cmd` points to a valid sclang path.")
+                    }
+
+                    const streamInfo: MessageTransports = {reader : reader, writer : writer, detached : false};
 
                     sclangProcess.stdout
                         .on('data', data => {
@@ -204,6 +218,7 @@ export class SuperColliderContext implements Disposable
         this.evaluateSelectionFeature = evaluateSelectionFeature;
 
         await this.client.start();
+        this.activated = true;
     }
 
     executeCommand(command: string)
