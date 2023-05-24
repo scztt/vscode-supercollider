@@ -53,16 +53,6 @@
                         "default": "",
                         "description": "Path to sclang_conf.yaml"
                     },
-                    "supercollider.sclang.lspReadPort": {
-                        "type": "number",
-                        "default": 58110,
-                        "description": "Language Server Protocol read port"
-                    },
-                    "supercollider.sclang.lspWritePort": {
-                        "type": "number",
-                        "default": 58111,
-                        "description": "Language Server Protocol write port"
-                    },
                     "supercollider.sclang.evaluateResultPrefix": {
                         "type": "string",
                         "default": "> ",
