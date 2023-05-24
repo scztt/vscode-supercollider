@@ -20,6 +20,7 @@ export async function activate(context: vscode.ExtensionContext)
         try
         {
             await supercolliderContext.activate(context.globalStoragePath, outputChannel, context.workspaceState);
+            help.activate(supercolliderContext);
         }
         catch (error)
         {
@@ -161,8 +162,6 @@ export async function activate(context: vscode.ExtensionContext)
         'supercollider.stopRecording',
         async () => {
             supercolliderContext.executeCommand('supercollider.internal.stopRecording')}));
-
-    help.activate(supercolliderContext);
 
     doActivate();
 }
