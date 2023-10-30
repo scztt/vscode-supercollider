@@ -35,7 +35,8 @@
    
    The path to your conf.yaml file - you can find this in the current SuperCollider IDE in Preferences -> Interpreter -> Active Config File. You can also create an empty `.yaml` in a location of your choiuce and point to that.
 
-5. Install the LanguageServer.quark in SuperCollider (from the command palette: "SuperCollider: Update LanguageServer.quark")
+5. Install the LanguageServer.quark - from the VSCode command palette, choose "SuperCollider: Update LanguageServer.quark". 
+  **NOTE**: Installing the LanguageServer.quark will conflict with using the built-in SCIde. See the note below for a workaround.
 
 6. Open a project folder containing .scd or .sc files! Most existing IDE commands are available in VSCode, you can find them by searching for "SuperCollider" from the command palette. Some are already mapped to the expecte keyboard shortcuts (e.g. Cmd+Enter and Cmd+Period), some are not (you can use the gear icon next to the command to set keyboard shortcuts).
 
@@ -87,3 +88,11 @@
 
 Please report bugs or feature requests on the GitHub issues page for the extension:
 https://github.com/scztt/vscode-supercollider
+
+# Error: duplicate Class found: 'Document'
+
+The LanguageServer Quark provides a Document class that replaces the built-in one that is provided by SCIDE. Unfortunately, both Document classes cannot be installed at once, which means that installing the LanguageServer quark will cause compile errors in SCIDE. To resolve this:
+1. Make a copy of your `sclang_conf.yaml` file, e.g. `sclang_conf_vscode.yaml` - you can find the location in the SCIDE preferences.
+2. In VSCode's settings, find the "Path to sclang_conf.yaml" setting - point this path to your new yaml file.
+3. Quark will be installed separately to one of the two yaml files, depending on which IDE you are using - remember that if you're switching between IDE's, you'll need to install quarks separately in each.|
+This problem will be resolved in the future, see https://github.com/users/scztt/projects/1?pane=issue&itemId=3131661
