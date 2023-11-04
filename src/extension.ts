@@ -7,6 +7,8 @@ import {workspace} from 'vscode';
 
 import * as help from './commands/help'
 import {SuperColliderContext} from './context';
+import * as defaults from './util/defaults'
+import { getSclangPath } from './util/sclang';
 
 export async function activate(context: vscode.ExtensionContext)
 {
@@ -36,11 +38,8 @@ export async function activate(context: vscode.ExtensionContext)
         'supercollider.updateLanguageServer',
         async () => {
             const configuration  = workspace.getConfiguration();
-            const sclangPath     = configuration.get<string>('supercollider.sclang.cmd');
-            const sclangConfYaml = configuration.get<string>('supercollider.sclang.confYaml');
-
-            await new Promise((res, err) => {
-                                  fs.access(sclangPath, fs.constants.X_OK, () => {res(true);})});
+            const sclangPath     = await getSclangPath();
+            const sclangConfYaml = configuration.get<string>('supercollider.sclang.confYaml', defaults.userConfigPath());
 
             const tempFilePath = await new Promise<string>((res, err) => {
                                                                fs.mkdtemp(

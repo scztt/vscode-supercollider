@@ -1,6 +1,5 @@
 import * as cp from 'child_process';
 import * as dgram from 'dgram';
-import * as fs from 'fs';
 import * as vscode from 'vscode';
 import {Disposable,
         workspace} from 'vscode';
@@ -10,9 +9,11 @@ import {ExecuteCommandRequest,
         MessageTransports,
         ServerOptions} from 'vscode-languageclient/node';
 
-import {EvaluateSelectionFeature} from './commands/evaluate.js';
+import {EvaluateSelectionFeature} from './commands/evaluate';
+import * as defaults from './util/defaults';
+import { getSclangPath } from './util/sclang';
 import {UDPMessageReader,
-        UDPMessageWriter} from './util/readerWriter.js';
+        UDPMessageWriter} from './util/readerWriter';
 
 const lspAddress = '127.0.0.1';
 
@@ -27,14 +28,14 @@ export class SuperColliderContext implements Disposable
     readerSocket: dgram.Socket;
     activated: boolean = false;
 
-    processOptions(readPort: number, writePort: number)
+    async processOptions(readPort: number, writePort: number)
     {
         const configuration               = workspace.getConfiguration()
 
-        const sclangPath                  = configuration.get<string>('supercollider.sclang.cmd')
+        const sclangPath                  = await getSclangPath()
+        const sclangConfYaml              = configuration.get<string>('supercollider.sclang.confYaml', defaults.userConfigPath())
         const sclangArgs                  = configuration.get<Array<string>>('supercollider.sclang.args')
         const sclangEnv                   = configuration.get<Object>('supercollider.sclang.environment')
-        const sclangConfYaml              = configuration.get<string>('supercollider.sclang.confYaml')
 
         let env                           = process.env;
         env['SCLANG_LSP_ENABLE']          = '1';
@@ -70,14 +71,14 @@ export class SuperColliderContext implements Disposable
         }
     }
 
-    createProcess(readPort: number, writePort: number)
+    async createProcess(readPort: number, writePort: number)
     {
         if (this.sclangProcess)
         {
             this.sclangProcess.kill()
         }
 
-        let options       = this.processOptions(readPort, writePort);
+        let options       = await this.processOptions(readPort, writePort);
         let sclangProcess = cp.spawn(options.command, options.args, options.options);
 
         if (!sclangProcess || !sclangProcess.pid)
@@ -148,7 +149,7 @@ export class SuperColliderContext implements Disposable
                                                    })})
                 });
 
-                Promise.all([ readerSocket, writerSocket ]).then((sockets) => {
+                Promise.all([ readerSocket, writerSocket ]).then(async (sockets) => {
                     let socket        = sockets[0];
                     that.readerSocket = socket;
 
@@ -157,7 +158,7 @@ export class SuperColliderContext implements Disposable
                     let reader        = new UDPMessageReader(socket);
                     let writer        = new UDPMessageWriter(socket, writerPort, lspAddress)
 
-                    let sclangProcess = that.sclangProcess = that.createProcess(readerPort, writerPort);
+                    let sclangProcess = that.sclangProcess = await that.createProcess(readerPort, writerPort);
 
                     if (!sclangProcess)
                     {
