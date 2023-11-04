@@ -32,3 +32,11 @@ a.menu-link {
     color: var(--vscode-statusBarItem-warningForeground);
     background-color: var(--vscode-statusBarItem-warningBackground);
 }
+
+#summary {
+    color: var(--vscode-foreground);;
+}
+
+.CodeMirror {
+    background: var(--vscode-editor-foreground);
+}
