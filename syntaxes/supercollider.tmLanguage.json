@@ -76,7 +76,7 @@
         {
           "begin": "'",
           "end": "'",
-          "name": "entity.name.symbol.supercollider",
+          "name": "constant.other.symbol.supercollider",
           "patterns": [
             {
               "match": "\\\\.",
@@ -86,13 +86,13 @@
         },
         {
           "match": "\\\\[a-zA-Z0-9_]+",
-          "name": "entity.name.symbol.supercollider"
+          "name": "constant.other.symbol.supercollider"
         },
 
         {
           "captures": {
             "1": {
-              "name": "entity.name.symbol.supercollider"
+              "name": "constant.other.symbol.supercollider"
             }
           },
           "match": "([a-z][a-zA-Z0-9_]*)\\s*\\:"
