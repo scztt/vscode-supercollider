@@ -2,7 +2,7 @@
     "name": "vscode-supercollider",
     "displayName": "vscode-supercollider",
     "description": "Language Server Client for SuperCollider / sclang",
-    "version": "0.0.1",
+    "version": "0.0.2",
     "publisher": "Scott Carver",
     "homepage": "https://github.com/scztt/vscode-supercollider/blob/master/README.md",
     "license": "MIT",

@@ -51,7 +51,7 @@ export function sclangPath() {
         return path.join(installPath, sclangExecutable());
     }
     case 'darwin': {
-        return path.join('/Applications', ApplicationName + '.app', 'Contents', 'MacOS', "zxxzx" + sclangExecutable())
+        return path.join('/Applications', ApplicationName + '.app', 'Contents', 'MacOS', sclangExecutable())
     }
     case 'linux':
     case 'freebsd':
