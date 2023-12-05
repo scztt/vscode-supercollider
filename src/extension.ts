@@ -78,10 +78,11 @@ export async function activate(context: vscode.ExtensionContext)
 
             await new Promise((res, rej) => {
                 sclangProcess.on('exit', () => {
-                    if (sclangProcess.exitCode == 1) {
+                    if (sclangProcess.exitCode === 0) {
+                        res(true);
+                    } else {
                         rej(`Failed to install/update LanguageServer quark. Run command to see error: \n\n${(sclangProcess.spawnargs).join(' ')}`);
                     }
-                    res(true);
                 });
             })
         }));
