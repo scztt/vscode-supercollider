@@ -41,6 +41,10 @@ export async function activate(context: vscode.ExtensionContext)
             const sclangPath     = await getSclangPath();
             const sclangConfYaml = configuration.get<string>('supercollider.sclang.confYaml', defaults.userConfigPath());
 
+            if (sclangConfYaml != '' && !fs.existsSync(sclangConfYaml)) {
+                throw new Error("Sclang config file does not exist. Please check the 'supercollider.sclang.confYaml' path in your settings.");
+            }
+
             const tempFilePath = await new Promise<string>((res, err) => {
                                                                fs.mkdtemp(
                                                                    path.join(os.tmpdir(), 'vscode-supercollider'),
@@ -55,9 +59,14 @@ export async function activate(context: vscode.ExtensionContext)
                                                                            fs.writeFile(
                                                                                finalPath,
                                                                                `
-                                                                               try { Quarks.install("https://github.com/scztt/LanguageServer.quark") };
-                                                                               try { Quarks.update("https://github.com/scztt/LanguageServer.quark") };
-                                                                               0.exit;
+                                                                               var exitCode = 0;
+                                                                               try { Quarks.install("https://github.com/scztt/LanguageServer.quark");
+                                                                                     Quarks.update("https://github.com/scztt/LanguageServer.quark");
+                                                                               } { |err|
+                                                                                     postln(err.errorString);
+                                                                                     exitCode = 1;
+                                                                               };
+                                                                               exitCode.exit;
                                                                                `,
                                                                                null,
                                                                                () => {res(finalPath)});
@@ -67,9 +76,13 @@ export async function activate(context: vscode.ExtensionContext)
             const args         = [ '-l', sclangConfYaml, tempFilePath ];
             let sclangProcess  = cp.spawn(sclangPath, args);
 
-            await new Promise((res) => {
+            await new Promise((res, rej) => {
                 sclangProcess.on('exit', () => {
-                    res(true);
+                    if (sclangProcess.exitCode === 0) {
+                        res(true);
+                    } else {
+                        rej(`Failed to install/update LanguageServer quark. Run command to see error: \n\n${(sclangProcess.spawnargs).join(' ')}`);
+                    }
                 });
             })
         }));
