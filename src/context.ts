@@ -93,7 +93,7 @@ export class SuperColliderContext implements Disposable
     {
         this.activated = false;
 
-        if (this.client.isRunning())
+        if (this.client?.isRunning())
         {
             await this.client.stop();
         }
