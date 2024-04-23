@@ -245,7 +245,7 @@
     },
     "dependencies": {
         "@vscode/windows-registry": "^1.1.0",
-        "vscode-languageclient": "^8.1.0"
+        "vscode-languageclient": "^9.0.1"
     },
     "devDependencies": {
         "@types/mocha": "^2.2.42",
