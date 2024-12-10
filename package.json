@@ -104,6 +104,11 @@
                         "type": "boolean",
                         "default": true,
                         "description": "Use the workspace startup file (startup.scd) when starting sclang."
+                    },
+                    "supercollider.serverStatusString": {
+                        "type": "string",
+                        "default": "${icon} ${avgCPU}% ${peakCPU}% ${numUGens}u ${numSynths}s ${numGroups}s ${numSynthDefs}d",
+                        "description": "Server status string to be displayed in the status bar. Server statistics can be included using keys formatted like ${keyname}. The available keys are: icon, avgCPU, peakCPU, numUGens, numSynths, numGroups, numSynthDefs"
                     }
                 }
             }
