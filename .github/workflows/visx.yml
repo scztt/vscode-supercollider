@@ -24,10 +24,10 @@ jobs:
       - run: npm ci
       - run: npm install -g @vscode/vsce
       - run: npm run build --if-present
-      - run: vsce package --pre-release --out vscode-supercollider-${{ github.ref_name }}.visx
+      - run: vsce package --pre-release --out vscode-supercollider-${{ github.ref_name }}.vsix
 
       - uses: actions/upload-artifact@v4
         with:
           name: supercollider-vscode-${{ matrix.runs-on }}
-          path: '*.visx'
+          path: '*.vsix'
           if-no-files-found: 'warn'
