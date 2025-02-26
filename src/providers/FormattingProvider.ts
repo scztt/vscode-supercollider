@@ -85,21 +85,33 @@ export class SuperColliderFormatter implements DocumentFormattingEditProvider, D
     }
 
     onData(stream) {
-        if (this.listeners.length == 0) {
-            this.output.appendLine("ERROR: Received data from formatter, but we weren't waiting on anything.")
-        }
+        let chunks = stream.toString()
+            .split(EOF_STRING);
 
-        let chunks = stream.toString().split(EOF_STRING);
+        // chunks = chunks.filter(l => l.length > 0);
+        if (chunks.length == 1) {
+            this.listeners[0].text += chunks[0];
+            return;
+        }
 
         while (chunks.length > 1) {
             let listener = this.listeners[0];
             this.listeners = this.listeners.slice(1);
+            const chunk = chunks[0];
+            chunks = chunks.slice(1);
 
-            listener.text += chunks[0]
+            if (!listener) {
+                // this.output.appendLine("ERROR: Received data from formatter, but we weren't waiting on anything.");
+                return;
+            }
+
+            listener.text += chunk
             listener.resolve(listener.text);
         }
 
-        this.listeners[0].text += stream;
+        if (this.listeners.length > 0 && chunks[0].length > 0) {
+            this.listeners[0].text += chunks[0];
+        }
     }
 
     dispose() {
