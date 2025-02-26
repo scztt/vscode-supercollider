@@ -10,7 +10,8 @@ import {
     LanguageClient,
     LanguageClientOptions,
     MessageTransports,
-    ServerOptions
+    ServerOptions,
+    State
 } from 'vscode-languageclient/node';
 
 import { EvaluateSelectionFeature } from './commands/evaluate';
@@ -80,6 +81,7 @@ export class SuperColliderContext implements Disposable {
     readerSocket: dgram.Socket;
     serverPorts: ServerPortRange | null;
     activated: boolean = false;
+    waitingForBoot: boolean = false;
 
     async processOptions(readPort: number, writePort: number) {
         const configuration = workspace.getConfiguration()
@@ -137,18 +139,7 @@ export class SuperColliderContext implements Disposable {
         };
     }
 
-    disposeProcess() {
-        if (this.sclangProcess) {
-            this.sclangProcess.kill();
-            this.sclangProcess = null;
-        }
-    }
-
     async createProcess(readPort: number, writePort: number) {
-        if (this.sclangProcess) {
-            this.sclangProcess.kill()
-        }
-
         let options = await this.processOptions(readPort, writePort);
         let sclangProcess = cp.spawn(options.command, options.args, options.options);
 
@@ -159,24 +150,24 @@ export class SuperColliderContext implements Disposable {
         return sclangProcess;
     }
 
-    async cleanup(processDied = false) {
-        this.activated = false;
+    disposeProcess() {
+        if (this.sclangProcess?.connected) {
+            this.sclangProcess.kill();
+        }
+        this.sclangProcess = null;
+    }
 
+    async cleanup() {
         this.disposeProcess();
-        // this.evaluateSelectionFeature.dispose();
         this.subscriptions.forEach((d) => {
             d.dispose();
         });
-        this.subscriptions = [];
-
-        if (this.client?.isRunning()) {
-            await this.client.stop(processDied ? 0 : 2000);
-        }
+        // this.subscriptions = [];
     };
 
     dispose() {
-        this.serverPorts.dispose();
-        return this.cleanup()
+        this.stopClient();
+        this.deactivate();
     }
 
     initializationOptions(configuration: vscode.WorkspaceConfiguration) {
@@ -192,13 +183,9 @@ export class SuperColliderContext implements Disposable {
         return options;
     }
 
-    async activate(globalStoragePath: string, outputChannel: vscode.OutputChannel, globalState: vscode.Memento) {
+    async activate(outputChannel: vscode.OutputChannel, globalState: vscode.Memento) {
+        if (this.activated) { return }
         let that = this;
-        // SUBTLE: We should mark ourselves as activated as soon as we begin doing anything - otherwise,
-        //         in case of error, it will look like things are working but they will be unresponsive.
-        this.activated = true;
-
-        this.cleanup();
 
         this.globalState = globalState;
         this.outputChannel = outputChannel;
@@ -249,6 +236,7 @@ export class SuperColliderContext implements Disposable {
                     let reader = new UDPMessageReader(socket);
                     let writer = new UDPMessageWriter(socket, writerPort, lspAddress);
 
+                    that.waitingForBoot = true;
                     let sclangProcess = that.sclangProcess = await that.createProcess(readerPort, writerPort);
 
                     if (!sclangProcess) {
@@ -263,6 +251,7 @@ export class SuperColliderContext implements Disposable {
                             outputChannel.append(string);
 
                             if (string.indexOf('***LSP READY***') != -1) {
+                                that.waitingForBoot = false;
                                 res(streamInfo);
                             }
                         })
@@ -270,18 +259,22 @@ export class SuperColliderContext implements Disposable {
                             outputChannel.append("\nsclang exited\n");
                             reader.dispose();
                             writer.dispose();
+                            that.disposeProcess();
                         })
                         .on('error', async (err) => {
                             outputChannel.append("\nsclang errored: " + err);
                             reader.dispose();
                             writer.dispose()
+                            that.disposeProcess();
                         });
 
                     sclangProcess.on('exit', async (code, signal) => {
-                        sclangProcess = null;
                         reader.dispose();
                         writer.dispose()
+                        that.disposeProcess();
                     });
+
+                    outputChannel.append("\n\n*********************************************************\n\n\n");
                 });
             });
         };
@@ -299,21 +292,68 @@ export class SuperColliderContext implements Disposable {
             initializationOptions: this.initializationOptions(workspace.getConfiguration())
         };
 
-        let client = new LanguageClient('SuperColliderLanguageServer', 'SuperCollider Language Server', serverOptions, clientOptions, true);
-        // client.trace                   = Trace.Verbose;
+        this.client = new LanguageClient('SuperColliderLanguageServer', 'SuperCollider Language Server', serverOptions, clientOptions, true);
+        this.subscriptions.push(this.client);
 
-        const evaluateSelectionFeature = new EvaluateSelectionFeature(client, this);
-        var [disposable, provider] = evaluateSelectionFeature.registerLanguageProvider();
+        const evaluateSelectionFeature = new EvaluateSelectionFeature(this.client, this);
+        this.client.registerFeature(evaluateSelectionFeature);
+        this.subscriptions.push(evaluateSelectionFeature);
+
+        var [disposable, _] = evaluateSelectionFeature.registerLanguageProvider();
         this.subscriptions.push(disposable);
 
-        client.registerFeature(evaluateSelectionFeature);
+        this.activated = true;
+    }
 
-        this.client = client;
-        this.evaluateSelectionFeature = evaluateSelectionFeature;
+    async deactivate() {
+        if (!this.activated) { return }
 
-        await this.client.start();
+        this.activated = false;
+        this.globalState = null;
+        this.outputChannel = null;
 
-        outputChannel.appendLine(`Starting SuperCollider Language Server (sessionId = ${vscode.env.sessionId})`);
+        this.subscriptions.forEach((d) => {
+            d.dispose();
+        });
+        this.subscriptions.slice(0, 0);
+
+        this.client.dispose();
+        this.client = null;
+    }
+
+    async startClient() {
+        if (this.client?.isRunning()) { return }
+
+        if (this.client.state == State.Running) {
+            await this.client.restart();
+        } else {
+            await this.client.start();
+        }
+
+        this.outputChannel.appendLine(`Starting SuperCollider Language Server (sessionId = ${vscode.env.sessionId})`);
+    }
+
+    async stopClient(processDied = false) {
+        if (!this.client?.isRunning()) {
+            this.disposeProcess();
+            return;
+        }
+
+        await this.client.stop(processDied ? 0 : 2000);
+    }
+
+    async restart() {
+        if (this.client.state == State.Starting) {
+            const outputChannel = this.outputChannel;
+            const globalState = this.globalState;
+            await this.deactivate();
+            await this.activate(outputChannel, globalState);
+            await this.startClient();
+
+        } else {
+            await this.stopClient();
+            await this.startClient();
+        }
     }
 
     executeCommand(command: string) {

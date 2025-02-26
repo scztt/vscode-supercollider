@@ -52,13 +52,15 @@ export async function activate(context: vscode.ExtensionContext) {
 
     const doActivate = async () => {
         try {
-            if (supercolliderContext) {
-                help.deactivate(supercolliderContext)
-                supercolliderContext.dispose();
+            if (!supercolliderContext) {
+                supercolliderContext = new SuperColliderContext();
+                // help.deactivate(supercolliderContext)
+                // supercolliderContext.dispose();
             }
 
-            supercolliderContext = new SuperColliderContext();
-            await supercolliderContext.activate(context.globalStoragePath, outputChannel, context.globalState);
+            await supercolliderContext.activate(outputChannel, context.globalState);
+            await supercolliderContext.startClient();
+
             help.activate(supercolliderContext);
             supercolliderContext.client.onNotification('supercollider/serverStatus', (data) => {
                 serverStatusBar.updateStatusBar(data);
@@ -127,16 +129,18 @@ export async function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(vscode.commands.registerCommand(
         'supercollider.restart',
         async () => {
-            if (!supercolliderContext || !supercolliderContext.activated) {
-                await doActivate();
-            }
-            else if (supercolliderContext.client?.isRunning()) {
-                await supercolliderContext.client.stop();
-            }
+            await supercolliderContext.restart();
 
-            if (!supercolliderContext.client?.isRunning()) {
-                await supercolliderContext.client.start();
-            }
+            // if (supercolliderContext.waitingForBoot || !supercolliderContext.activated) {
+            //     await doActivate();
+            // }
+            // else if (supercolliderContext.client?.isRunning()) {
+            //     await supercolliderContext.client.stop();
+            // }
+
+            // if (!supercolliderContext.client?.isRunning()) {
+            //     await supercolliderContext.client.start();
+            // }
         }));
 
     context.subscriptions.push(vscode.commands.registerCommand(

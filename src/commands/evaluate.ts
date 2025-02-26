@@ -343,14 +343,15 @@ async function evaluateString(client, document: vscode.TextDocument, range: Rang
 // @TODO A lot of boilerplate is required to register this as a feature, but in the end we just trigger the commands roughly the same way.
 // Is there benefit here, apart from that we can specify client capabilities and pass options back to our client (which we do not do now anyway...)?
 export class EvaluateSelectionFeature extends TextDocumentLanguageFeature<
-    EvaluateSelectionOptions | boolean, EvaluateSelectionRegistrationOptions, EvaluateSelectionProvider, EvaluateSelectionMiddleware>
-{
+    EvaluateSelectionOptions | boolean, EvaluateSelectionRegistrationOptions, EvaluateSelectionProvider, EvaluateSelectionMiddleware> {
+
     _context: SuperColliderContext;
 
     constructor(client, context: SuperColliderContext) {
         super(client, EvaluateSelectionRequest.type);
         this._context = context;
     }
+
     fillClientCapabilities(capabilities) {
         (ensure(ensure(capabilities, 'textDocument'), 'evaluation')).evaluateSelection = true;
     }
@@ -379,6 +380,7 @@ export class EvaluateSelectionFeature extends TextDocumentLanguageFeature<
             }
         };
 
-        return [registerEvaluateProvider(this._context, provider), provider];
+        const disposable = vscode.Disposable.from(registerEvaluateProvider(this._context, provider));
+        return [disposable, provider];
     }
 };
