@@ -3,7 +3,8 @@ import * as dgram from 'dgram';
 import * as vscode from 'vscode';
 import {
     Disposable,
-    workspace
+    workspace,
+    EventEmitter
 } from 'vscode';
 import {
     ExecuteCommandRequest,
@@ -70,6 +71,12 @@ class ServerPortRange implements Disposable {
     }
 };
 
+// Define the output message interface
+export interface OutputMessage {
+    text: string;
+    source: 'sclang' | 'vscode';
+}
+
 export class SuperColliderContext implements Disposable {
     subscriptions: vscode.Disposable[] = [];
     client!: LanguageClient;
@@ -82,6 +89,10 @@ export class SuperColliderContext implements Disposable {
     serverPorts: ServerPortRange | null;
     activated: boolean = false;
     waitingForBoot: boolean = false;
+
+    // Create event emitter for output messages
+    private _outputEventEmitter = new EventEmitter<OutputMessage>();
+    readonly onOutputMessage = this._outputEventEmitter.event;
 
     async processOptions(readPort: number, writePort: number) {
         const configuration = workspace.getConfiguration()
@@ -166,6 +177,8 @@ export class SuperColliderContext implements Disposable {
     };
 
     dispose() {
+        // Clean up event emitter
+        this._outputEventEmitter.dispose();
         this.stopClient();
         this.deactivate();
     }
@@ -189,6 +202,12 @@ export class SuperColliderContext implements Disposable {
 
         this.globalState = globalState;
         this.outputChannel = outputChannel;
+
+        // Subscribe the output channel to the output event
+        this.subscriptions.push(this.onOutputMessage(message => {
+            outputChannel.append(message.text);
+        }));
+
         outputChannel.show();
 
         if (workspace.getConfiguration().get<boolean>('supercollider.sclang.autoAllocateServerPorts', true)) {
@@ -248,7 +267,11 @@ export class SuperColliderContext implements Disposable {
                     sclangProcess.stdout
                         .on('data', data => {
                             let string = data.toString();
-                            outputChannel.append(string);
+                            // Emit event instead of direct outputChannel access
+                            that._outputEventEmitter.fire({
+                                text: string,
+                                source: 'sclang'
+                            });
 
                             if (string.indexOf('***LSP READY***') != -1) {
                                 that.waitingForBoot = false;
@@ -256,13 +279,23 @@ export class SuperColliderContext implements Disposable {
                             }
                         })
                         .on('end', async (args) => {
-                            outputChannel.append("\nsclang exited\n");
+                            // Emit end event
+                            that._outputEventEmitter.fire({
+                                text: "\nsclang exited\n",
+                                source: 'vscode'
+                            });
+
                             reader.dispose();
                             writer.dispose();
                             that.disposeProcess();
                         })
                         .on('error', async (err) => {
-                            outputChannel.append("\nsclang errored: " + err);
+                            // Emit error event
+                            that._outputEventEmitter.fire({
+                                text: "\nsclang errored: " + err,
+                                source: 'sclang'
+                            });
+
                             reader.dispose();
                             writer.dispose()
                             that.disposeProcess();
@@ -274,7 +307,11 @@ export class SuperColliderContext implements Disposable {
                         that.disposeProcess();
                     });
 
-                    outputChannel.append("\n\n*********************************************************\n\n\n");
+                    // Emit startup message
+                    that._outputEventEmitter.fire({
+                        text: "\n\n*********************************************************\n\n\n",
+                        source: 'vscode'
+                    });
                 });
             });
         };
@@ -330,7 +367,11 @@ export class SuperColliderContext implements Disposable {
             await this.client.start();
         }
 
-        this.outputChannel.appendLine(`Starting SuperCollider Language Server (sessionId = ${vscode.env.sessionId})`);
+        // Use the emitter instead of direct outputChannel access
+        this._outputEventEmitter.fire({
+            text: `Starting SuperCollider Language Server (sessionId = ${vscode.env.sessionId})\n`,
+            source: 'vscode'
+        });
     }
 
     async stopClient(processDied = false) {
