@@ -291,7 +291,8 @@ namespace EvaluateSelectionRequest {
 
     export interface EvaluateSelectionParams {
         textDocument: vscodelc.TextDocumentIdentifier,
-        sourceCode: string
+        sourceCode: string,
+        guestUser?: string
     }
 
     export interface EvaluateSelectionResult {
@@ -316,7 +317,8 @@ async function evaluateString(client, document: vscode.TextDocument, range: Rang
 
     const result = client.sendRequest(EvaluateSelectionRequest.type, {
         textDocument: docIdentifier,
-        sourceCode: activeTextEditor.document.getText(range)
+        sourceCode: activeTextEditor.document.getText(range),
+        guestUser: "supercollider"
     });
 
     result.then((result) => {
