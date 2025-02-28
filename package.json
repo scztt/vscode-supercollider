@@ -109,6 +109,11 @@
                         "type": "string",
                         "default": "${icon} ${avgCPU}% ${peakCPU}% ${numUGens}u ${numSynths}s ${numGroups}s ${numSynthDefs}d",
                         "description": "Server status string to be displayed in the status bar. Server statistics can be included using keys formatted like ${keyname}. The available keys are: icon, avgCPU, peakCPU, numUGens, numSynths, numGroups, numSynthDefs"
+                    },
+                    "supercollider.enableLiveShareCoop": {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Enable LiveShare Coop support for SuperCollider. This will allow LiveShare guests to both edit and execute code on the hosts machine. **NOTE: This feature must be enabled per LiveShare session. Since this allows guests to execute arbitrary code on your machine, only invite users you trust.**"
                     }
                 }
             }
@@ -236,6 +241,16 @@
                 "command": "supercollider.evaluateLine",
                 "title": "Evaluate line in sclang",
                 "category": "SuperCollider"
+            },
+            {
+                "command": "supercollider.startLiveShareCoopSession",
+                "title": "Start coop mode for current LiveShare session. **NOTE: This allows guests to execute code on your machine!**",
+                "enablement": "supercollider.startLiveShareCoopSession.enabled"
+            },
+            {
+                "command": "supercollider.endLiveShareCoopSession",
+                "title": "End the current coop LiveShare session.",
+                "enablement": "supercollider.endLiveShareCoopSession.enabled"
             }
         ],
         "languages": [
@@ -278,7 +293,8 @@
     },
     "dependencies": {
         "@vscode/windows-registry": "^1.1.0",
-        "vscode-languageclient": "^8.1.0"
+        "vscode-languageclient": "^8.1.0",
+        "vsls": "^1.0.4753"
     },
     "devDependencies": {
         "@types/mocha": "^2.2.42",

@@ -12,6 +12,23 @@ import { getSclangPath } from './util/sclang';
 import { ServerStatusBar } from './ServerStatusBar';
 import { SuperColliderFormatter } from './providers/FormattingProvider';
 
+export const internalCommands = [
+    'supercollider.internal.bootServer',
+    'supercollider.internal.rebootServer',
+    'supercollider.internal.killAllServers',
+    'supercollider.internal.showServerWindow',
+    'supercollider.internal.showServerMeter',
+    'supercollider.internal.showScope',
+    'supercollider.internal.showFreqscope',
+    'supercollider.internal.dumpNodeTree',
+    'supercollider.internal.dumpNodeTreeWithControls',
+    'supercollider.internal.showNodeTree',
+    'supercollider.internal.startRecording',
+    'supercollider.internal.pauseRecording',
+    'supercollider.internal.stopRecording',
+    'supercollider.internal.cmdPeriod',
+];
+
 export async function activate(context: vscode.ExtensionContext) {
     const outputChannel = vscode.window.createOutputChannel('supercollider', 'supercollider-log');
     context.subscriptions.push(outputChannel);

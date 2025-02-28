@@ -15,7 +15,7 @@ import {
     WorkDoneProgressOptions
 } from 'vscode-languageclient/node';
 
-import { SuperColliderContext } from '../context';
+import { SuperColliderContext, OutputMessage, EvaluationResult, EvaluationDelegate } from '../context';
 
 function ensure(target, key) {
     if (target[key] === void 0) {
@@ -23,6 +23,8 @@ function ensure(target, key) {
     }
     return target[key];
 }
+
+let _globalOutputChannel: vscode.OutputChannel;
 
 // These decorators are applied to evaluated regions of code during/after execution.
 const evaluateDecorator = vscode.window.createTextEditorDecorationType({
@@ -47,6 +49,8 @@ let evaluateUID = 0;
 
 const configuration = vscode.workspace.getConfiguration()
 const decoratorTimeout = 5000;
+
+import * as vsls from 'vsls';
 
 // Start and end execution actions
 async function onEndEvaluate(textEditor: TextEditor, range: Range, responseText: string, isError: boolean, flashDelay: Promise<void>) {
@@ -233,8 +237,9 @@ export function registerEvaluateProvider(context: SuperColliderContext, provider
     subscriptions.push(
         vscode.commands.registerCommand(
             'supercollider.evaluateSelection',
-            (inputRange) => {
-                const document = vscode.window.activeTextEditor.document;
+            async (documentUri, inputRange) => {
+                const document = documentUri ? await vscode.workspace.openTextDocument(vscode.Uri.parse(documentUri)) : vscode.window.activeTextEditor.document;
+                // Now you have the TextDocument
                 let range: Range = (inputRange != null)
                     ? new vscode.Selection(
                         new vscode.Position(inputRange['start']['line'], inputRange['start']['character']),
@@ -304,8 +309,10 @@ namespace EvaluateSelectionRequest {
     export const type = new ProtocolRequestType<EvaluateSelectionParams, EvaluateSelectionResult, never, void, EvaluateSelectionRegistrationOptions>(method);
 }
 
-async function evaluateString(client, document: vscode.TextDocument, range: Range): Promise<EvaluateSelectionRequest.EvaluateSelectionResult> {
+async function evaluateString(delegate: EvaluationDelegate, client, document: vscode.TextDocument, range: Range): Promise<EvaluateSelectionRequest.EvaluateSelectionResult> {
     const activeTextEditor = vscode.window.activeTextEditor;
+    const liveshare = await vsls.getApi();
+    const isLiveShareGuest = liveshare?.session?.role == vsls.Role.Guest;
 
     if (!activeTextEditor)
         return;
@@ -313,13 +320,8 @@ async function evaluateString(client, document: vscode.TextDocument, range: Rang
     const uri = vscode.Uri.file(document.fileName);
     const docIdentifier = vscodelc.TextDocumentIdentifier.create(uri.toString());
 
-    let finishFunc = onStartEvaluate(activeTextEditor, range);
-
-    const result = client.sendRequest(EvaluateSelectionRequest.type, {
-        textDocument: docIdentifier,
-        sourceCode: activeTextEditor.document.getText(range),
-        guestUser: "supercollider"
-    });
+    const finishFunc = onStartEvaluate(activeTextEditor, range);
+    const result = delegate.doEvaluate(docIdentifier, activeTextEditor.document.getText(range));
 
     result.then((result) => {
         if (result.result !== undefined) {
@@ -340,6 +342,7 @@ async function evaluateString(client, document: vscode.TextDocument, range: Rang
     });
 
     return result;
+
 }
 
 // @TODO A lot of boilerplate is required to register this as a feature, but in the end we just trigger the commands roughly the same way.
@@ -348,10 +351,18 @@ export class EvaluateSelectionFeature extends TextDocumentLanguageFeature<
     EvaluateSelectionOptions | boolean, EvaluateSelectionRegistrationOptions, EvaluateSelectionProvider, EvaluateSelectionMiddleware> {
 
     _context: SuperColliderContext;
+    _outputChannel: vscode.OutputChannel;
+    _evaluationDelegate: EvaluationDelegate;
+    private outputSubscription: vscode.Disposable | null = null;
 
-    constructor(client, context: SuperColliderContext) {
+    constructor(client, context: SuperColliderContext, evaluationDelegate: EvaluationDelegate) {
         super(client, EvaluateSelectionRequest.type);
         this._context = context;
+        this._evaluationDelegate = evaluationDelegate;
+    }
+
+    set evaluationDelegate(value: EvaluationDelegate) {
+        this._evaluationDelegate = value;
     }
 
     fillClientCapabilities(capabilities) {
@@ -372,10 +383,11 @@ export class EvaluateSelectionFeature extends TextDocumentLanguageFeature<
     registerLanguageProvider(): [vscode.Disposable, EvaluateSelectionProvider] {
         const provider: EvaluateSelectionProvider = {
             evaluateString: (document: vscode.TextDocument, range: Range) => {
+                const that = this;
                 const client = this._client;
 
                 const provideEvaluateSelection = (document: vscode.TextDocument, range: Range) => {
-                    return evaluateString(client, document, range);
+                    return evaluateString(that._evaluationDelegate, client, document, range);
                 };
 
                 return provideEvaluateSelection(document, range);

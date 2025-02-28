@@ -12,7 +12,8 @@ import {
     LanguageClientOptions,
     MessageTransports,
     ServerOptions,
-    State
+    State,
+    TextDocumentIdentifier
 } from 'vscode-languageclient/node';
 
 import { EvaluateSelectionFeature } from './commands/evaluate';
@@ -22,6 +23,9 @@ import {
     UDPMessageReader,
     UDPMessageWriter
 } from './util/readerWriter';
+import { LiveshareGuestProxy, LiveshareHost, onLiveshareSession } from './util/liveshare';
+import { Role } from 'vsls';
+import { resourceLimits } from 'worker_threads';
 
 const lspAddress = '127.0.0.1';
 
@@ -77,7 +81,22 @@ export interface OutputMessage {
     source: 'sclang' | 'vscode';
 }
 
-export class SuperColliderContext implements Disposable {
+// Add a delegate interface for evaluation
+export interface EvaluationResult {
+    result: string | null;
+    error: string | null;
+    compileError: string | null;
+}
+
+export interface EvaluationDelegate {
+    doEvaluate(textDocument: TextDocumentIdentifier, sourceCode: string, user?: string): Promise<EvaluationResult>;
+}
+
+export interface CommandDelegate {
+    doCommand(command: string, user?: string): void;
+}
+
+export class SuperColliderContext implements Disposable, EvaluationDelegate, CommandDelegate {
     subscriptions: vscode.Disposable[] = [];
     client!: LanguageClient;
     evaluateSelectionFeature!: EvaluateSelectionFeature;
@@ -89,6 +108,9 @@ export class SuperColliderContext implements Disposable {
     serverPorts: ServerPortRange | null;
     activated: boolean = false;
     waitingForBoot: boolean = false;
+    liveshareGuestProxy: LiveshareGuestProxy;
+    liveshareHost: LiveshareHost;
+    commandDelegate: CommandDelegate;
 
     // Create event emitter for output messages
     private _outputEventEmitter = new EventEmitter<OutputMessage>();
@@ -194,6 +216,14 @@ export class SuperColliderContext implements Disposable {
         }
 
         return options;
+    }
+
+    async doEvaluate(textDocument: TextDocumentIdentifier, sourceCode: string, user: string | null): Promise<EvaluationResult> {
+        return this.client.sendRequest("textDocument/evaluateSelection", {
+            textDocument: textDocument,
+            sourceCode: sourceCode,
+            user: user
+        });
     }
 
     async activate(outputChannel: vscode.OutputChannel, globalState: vscode.Memento) {
@@ -332,12 +362,108 @@ export class SuperColliderContext implements Disposable {
         this.client = new LanguageClient('SuperColliderLanguageServer', 'SuperCollider Language Server', serverOptions, clientOptions, true);
         this.subscriptions.push(this.client);
 
-        const evaluateSelectionFeature = new EvaluateSelectionFeature(this.client, this);
+        const evaluateSelectionFeature = new EvaluateSelectionFeature(this.client, this, this);
         this.client.registerFeature(evaluateSelectionFeature);
         this.subscriptions.push(evaluateSelectionFeature);
 
         var [disposable, _] = evaluateSelectionFeature.registerLanguageProvider();
         this.subscriptions.push(disposable);
+
+        let liveshareSessionRole = Role.None;
+        let currentLiveShareSession: string | null;
+        let currentCoopSession: string | null;
+
+        const updateLiveshareSession = () => {
+            const enabled = workspace.getConfiguration().get<boolean>('supercollider.enableLiveShareCoop', false);
+            const hasActiveLiveShareSession = liveshareSessionRole !== Role.None;
+
+            // End coop
+            if (!enabled || !hasActiveLiveShareSession || currentCoopSession === null || currentCoopSession !== currentLiveShareSession) {
+                currentCoopSession = null;
+
+                this.liveshareHost?.dispose();
+                this.liveshareHost = null;
+                this.liveshareGuestProxy?.dispose();
+                this.liveshareGuestProxy = null;
+
+                evaluateSelectionFeature.evaluationDelegate = this;
+                this.commandDelegate = this;
+            } else if (liveshareSessionRole === Role.Host) {
+                if (!this.liveshareHost) {
+                    this.liveshareHost = new LiveshareHost(this.onOutputMessage);
+                    this.liveshareHost.connect(this, this);
+                }
+                evaluateSelectionFeature.evaluationDelegate = this.liveshareHost;
+                this.commandDelegate = this;
+            } else if (liveshareSessionRole === Role.Guest) {
+                if (!this.liveshareGuestProxy) {
+                    this.liveshareGuestProxy = new LiveshareGuestProxy();
+                    this.liveshareGuestProxy.connect();
+                }
+                evaluateSelectionFeature.evaluationDelegate = this.liveshareGuestProxy;
+                this.commandDelegate = this.liveshareGuestProxy;
+            }
+
+            vscode.commands.executeCommand(
+                'setContext', 'supercollider.startLiveShareCoopSession.enabled',
+                enabled && hasActiveLiveShareSession && currentCoopSession === null
+            );
+            vscode.commands.executeCommand(
+                'setContext', 'supercollider.endLiveShareCoopSession.enabled',
+                enabled && hasActiveLiveShareSession && currentCoopSession !== null
+            );
+        };
+
+        this.subscriptions.push(vscode.commands.registerCommand(
+            'supercollider.startLiveShareCoopSession',
+            async () => {
+                currentCoopSession = currentLiveShareSession;
+                updateLiveshareSession();
+            }));
+
+        this.subscriptions.push(vscode.commands.registerCommand(
+            'supercollider.endLiveShareCoopSession',
+            async () => {
+                currentCoopSession = null;
+                updateLiveshareSession();
+            }));
+
+        workspace.onDidChangeConfiguration((e) => {
+            if (e.affectsConfiguration('supercollider.enableLiveShareCoop')) {
+                updateLiveshareSession()
+            }
+        });
+
+        this.subscriptions.push(
+            await onLiveshareSession((role, id) => {
+                const enabled = workspace.getConfiguration().get<boolean>('supercollider.enableLiveShareCoop', false);
+
+                if (enabled && role != Role.None) {
+                    const options = ['Yes', 'No'];
+
+                    const description = role === Role.Host
+                        ? 'You are hosting a LiveShare session. Do you want to use co-op mode? THIS MEANS REMOTE USERS CAN EXECUTE CODE ON YOUR MACHINE.'
+                        : 'You are joining a LiveShare session. Do you want to use co-op mode? This means you will be executing code on the host machine.';
+
+                    vscode.window.showQuickPick(options, {
+                        placeHolder: description,
+                        canPickMany: false,
+                        ignoreFocusOut: false
+                    }).then((result) => {
+                        if (result == 'Yes') {
+                            role = Role.Host;
+                            currentCoopSession = id;
+                        };
+                        liveshareSessionRole = role;
+                        currentLiveShareSession = id;
+                        updateLiveshareSession();
+                    });
+                } else {
+                    liveshareSessionRole = role;
+                    currentLiveShareSession = id;
+                }
+            })
+        );
 
         this.activated = true;
     }
@@ -397,10 +523,14 @@ export class SuperColliderContext implements Disposable {
         }
     }
 
-    executeCommand(command: string) {
+    doCommand(command: string, user?: string) {
         let result = this.client.sendRequest(ExecuteCommandRequest.type, { command });
         result.then(function (result) {
             console.log(result)
         });
+    }
+
+    executeCommand(command: string) {
+        this.commandDelegate.doCommand(command);
     }
 }
