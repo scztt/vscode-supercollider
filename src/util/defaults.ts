@@ -71,8 +71,6 @@ function getInstallPathWin() {
     return 'c:\\Program Files\\SuperCollider';
 }
 
-getInstallPathWin()
-
 export function sclangPath() {
     switch (platform()) {
         case 'win32': {

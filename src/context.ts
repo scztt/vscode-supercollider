@@ -25,7 +25,6 @@ import {
 } from './util/readerWriter';
 import { LiveshareGuestProxy, LiveshareHost, onLiveshareSession } from './util/liveshare';
 import { Role } from 'vsls';
-import { resourceLimits } from 'worker_threads';
 
 const lspAddress = '127.0.0.1';
 
