@@ -82,20 +82,42 @@ export async function activate(context: vscode.ExtensionContext) {
             const tempFolder = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'vscode-supercollider'))
             const tempFilePath = path.join(tempFolder, 'boostrap.scd');
 
+            // We expect that at least one of either install or update will work.
+            // If BOTH fail, something is wrong and we exit with a non-zero error code.
             await fs.promises.writeFile(
                 tempFilePath, `
-                try { Quarks.install("https://github.com/scztt/LanguageServer.quark") };
-                try { Quarks.update("https://github.com/scztt/LanguageServer.quark") };
-                0.exit;`);
+                (
+                var errorCount = 0;
+                try { Quarks.install("https://github.com/scztt/LanguageServer.quark") } { |e| e.reportError; errorCount = errorCount + 1 };
+                try { Quarks.update("https://github.com/scztt/LanguageServer.quark") } { |e| e.reportError; errorCount = errorCount + 1 };
+                exit(if (errorCount > 1) { 1 } { 0 });
+                )
+            `);
 
+            outputChannel.appendLine(`\n***Installing/Updating LanguageServer quark...***`);
+            let output = ""
             const args = ['-l', sclangConfYaml, tempFilePath];
             let sclangProcess = cp.spawn(sclangPath, args);
 
+            sclangProcess.stdout.on('data', (data: Buffer) => {
+                output += data.toString();
+            });
+
+            sclangProcess.stderr.on('data', (data: Buffer) => {
+                output += data.toString();
+            });
+
             await new Promise((res, rej) => {
-                sclangProcess.on('exit', () => {
-                    if (sclangProcess.exitCode === 0) {
+                sclangProcess.on('exit', (code) => {
+                    if (code === 999) {
+                        outputChannel.appendLine(`\n***LanguageServer quark installed/updated successfully.***`);
                         res(true);
                     } else {
+                        outputChannel.appendLine(`\n***Problems installing the LanguageServer quark.***`);
+                        outputChannel.appendLine(`Output from sclang:`);
+                        for (const line of output.split('\n')) {
+                            outputChannel.appendLine("    | " + line);
+                        }
                         rej(`Failed to install/update LanguageServer quark. Run command to see error: \n\n${(sclangProcess.spawnargs).join(' ')}`);
                     }
                 });
@@ -201,8 +223,8 @@ export async function activate(context: vscode.ExtensionContext) {
             supercolliderContext.executeCommand('supercollider.internal.cmdPeriod')
         }));
 
-	context.subscriptions.push(serverStatusBar.getStatusBarItem());
-    serverStatusBar.updateStatusBar({running: false, unresponsive: false, avgCPU: 0, peakCPU: 0, numUGens: 0, numSynths: 0, numGroups: 0, numSynthDefs: 0});
+    context.subscriptions.push(serverStatusBar.getStatusBarItem());
+    serverStatusBar.updateStatusBar({ running: false, unresponsive: false, avgCPU: 0, peakCPU: 0, numUGens: 0, numSynths: 0, numGroups: 0, numSynthDefs: 0 });
 
     doActivate();
 
