@@ -175,7 +175,10 @@ export class SuperColliderContext implements Disposable {
     };
 
     dispose() {
-        this.serverPorts.dispose();
+        if (this.serverPorts) {
+            this.serverPorts.dispose();
+        }
+
         return this.cleanup()
     }
 
