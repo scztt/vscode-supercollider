@@ -136,6 +136,12 @@
                 "when": "!editorHasSelection && editorLangId == 'supercollider'"
             },
             {
+                "command": "supercollider.evaluateRegionByName",
+                "key": "shift+ctrl+enter",
+                "mac": "shift+cmd+enter",
+                "when": "editorLangId == 'supercollider'"
+            },
+            {
                 "command": "supercollider.cmdPeriod",
                 "key": "ctrl+.",
                 "mac": "cmd+."
@@ -240,6 +246,11 @@
             {
                 "command": "supercollider.evaluateLine",
                 "title": "Evaluate line in sclang",
+                "category": "SuperCollider"
+            },
+            {
+                "command": "supercollider.evaluateRegionByName",
+                "title": "Evaluate region by name in sclang",
                 "category": "SuperCollider"
             },
             {
