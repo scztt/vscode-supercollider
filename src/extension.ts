@@ -147,17 +147,6 @@ export async function activate(context: vscode.ExtensionContext) {
         'supercollider.restart',
         async () => {
             await supercolliderContext.restart();
-
-            // if (supercolliderContext.waitingForBoot || !supercolliderContext.activated) {
-            //     await doActivate();
-            // }
-            // else if (supercolliderContext.client?.isRunning()) {
-            //     await supercolliderContext.client.stop();
-            // }
-
-            // if (!supercolliderContext.client?.isRunning()) {
-            //     await supercolliderContext.client.start();
-            // }
         }));
 
     context.subscriptions.push(vscode.commands.registerCommand(
