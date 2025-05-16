@@ -4,13 +4,22 @@ import * as vscode from 'vscode';
 import {
     Disposable,
     workspace,
-    EventEmitter
+    EventEmitter,
+    TextDocument,
+    CancellationToken,
+    ProviderResult,
+    CodeLens
 } from 'vscode';
 import {
+    CodeLensMiddleware,
     ExecuteCommandRequest,
+    FoldingRangeProviderMiddleware,
+    FoldingRangeRequest,
     LanguageClient,
     LanguageClientOptions,
     MessageTransports,
+    ProvideCodeLensesSignature,
+    ProvideFoldingRangeSignature,
     ServerOptions,
     State,
     TextDocumentIdentifier
@@ -355,7 +364,7 @@ export class SuperColliderContext implements Disposable, EvaluationDelegate, Com
                 supportHtml: true,
                 isTrusted: true
             },
-            initializationOptions: this.initializationOptions(workspace.getConfiguration())
+            initializationOptions: this.initializationOptions(workspace.getConfiguration()),
         };
 
         this.client = new LanguageClient('SuperColliderLanguageServer', 'SuperCollider Language Server', serverOptions, clientOptions, true);
@@ -371,6 +380,7 @@ export class SuperColliderContext implements Disposable, EvaluationDelegate, Com
         let liveshareSessionRole = Role.None;
         let currentLiveShareSession: string | null;
         let currentCoopSession: string | null;
+        this.commandDelegate = this;
 
         const updateLiveshareSession = () => {
             const enabled = workspace.getConfiguration().get<boolean>('supercollider.enableLiveShareCoop', false);
@@ -391,6 +401,17 @@ export class SuperColliderContext implements Disposable, EvaluationDelegate, Com
                 if (!this.liveshareHost) {
                     this.liveshareHost = new LiveshareHost(this.onOutputMessage);
                     this.liveshareHost.connect(this, this);
+                    this.liveshareHost.onPeersChanged((e) => {
+                        e.added.forEach((peer) => {
+                            outputChannel.appendLine(`User joined: ${peer.user.userName} (${peer.user.displayName})`,);
+                        });
+                        e.removed.forEach((peer) => {
+                            outputChannel.appendLine(`User left: ${peer.user.userName} (${peer.user.displayName})`,);
+                        });
+                    });
+
+                    outputChannel.appendLine(`*** Hosting co-op LiveShare session, id: ${currentLiveShareSession} ***`);
+                    outputChannel.appendLine("*** Remote LiveShare users can execute code on your machine! ***");
                 }
                 evaluateSelectionFeature.evaluationDelegate = this.liveshareHost;
                 this.commandDelegate = this;

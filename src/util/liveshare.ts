@@ -2,6 +2,7 @@ import { Command, Disposable, Event, EventEmitter, OutputChannel, Uri, window } 
 import * as vsls from 'vsls';
 import { EvaluationDelegate, EvaluationResult, CommandDelegate, OutputMessage } from "../context";
 import { internalCommands } from "../extension";
+import * as vscode from 'vscode';
 
 // Import the EvaluateSelectionParams interface
 interface EvaluateSelectionParams {
@@ -24,6 +25,12 @@ export class LiveshareGuestProxy implements Disposable, EvaluationDelegate, Comm
     constructor() {
         this._outputChannel = window.createOutputChannel("SuperCollider Coop", 'supercollider-log');
         this._outputChannel.show();
+    }
+
+    dispose() {
+        this._outputChannel.dispose();
+        // this.statusBarItem.dispose();
+        this.disconnect();
     }
 
     async connect(): Promise<void> {
@@ -58,17 +65,12 @@ export class LiveshareGuestProxy implements Disposable, EvaluationDelegate, Comm
             [
                 textDocument.uri,
                 sourceCode,
-                user || this._liveshare.session.user?.displayName || 'unknown',
+                user || this._liveshare.session.user?.userName || 'unknown',
             ]);
     }
 
     doCommand(command: string, user: string | null): Promise<any> {
         return this._service.request(command, [user]);
-    }
-
-    dispose() {
-        this._outputChannel.dispose();
-        this.disconnect();
     }
 }
 
@@ -79,6 +81,7 @@ export class LiveshareHost implements Disposable, EvaluationDelegate, CommandDel
     private _evaluationDelegate: EvaluationDelegate | null = null;
     private _commandDelegate: CommandDelegate | null = null;
     private _subscriptions: Disposable[] = [];
+    private _peersChanged: EventEmitter<vsls.PeersChangeEvent> = new EventEmitter<vsls.PeersChangeEvent>();
 
     constructor(outputEvent: Event<OutputMessage>) {
         this._subscriptions.push(outputEvent((message: OutputMessage) => {
@@ -86,12 +89,16 @@ export class LiveshareHost implements Disposable, EvaluationDelegate, CommandDel
         }));
     }
 
+    get onPeersChanged(): Event<vsls.PeersChangeEvent> {
+        return this._peersChanged.event;
+    }
+
     doEvaluate(textDocument: TextDocumentIdentifier, sourceCode: string, user?: string): Promise<EvaluationResult> {
         if (!this._evaluationDelegate) {
             return Promise.reject(new Error("No evaluation handler registered"));
         }
 
-        user = user || this._liveshare.session?.user?.displayName || 'unknown';
+        user = user || this._liveshare.session?.user?.userName || 'unknown';
 
         return this._evaluationDelegate.doEvaluate(textDocument, sourceCode, user);
     }
@@ -116,6 +123,10 @@ export class LiveshareHost implements Disposable, EvaluationDelegate, CommandDel
         if (!this._liveshare) {
             throw new Error("LiveShare API not available");
         }
+
+        this._subscriptions.push(this._liveshare.onDidChangePeers((e) => {
+            this._peersChanged.fire(e);
+        }));
 
         this._service = await this._liveshare.shareService('supercollider');
 

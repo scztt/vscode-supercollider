@@ -2,11 +2,13 @@ import * as vscode from 'vscode';
 import {
     MarkdownString,
     Range,
-    TextEditor
+    TextEditor,
+    Uri
 } from 'vscode';
 import * as uuid from 'vscode-languageclient/lib/common/utils/uuid';
 import * as vscodelc from 'vscode-languageclient/node';
 import {
+    CancellationToken,
     integer,
     ProtocolRequestType,
     StaticRegistrationOptions,
@@ -233,6 +235,7 @@ interface EvaluateSelectionProvider {
 
 export function registerEvaluateProvider(context: SuperColliderContext, provider): vscode.Disposable {
     let subscriptions: vscode.Disposable[] = [];
+    let lastEvaluated: Map<Uri, string[]> = new Map();
 
     subscriptions.push(
         vscode.commands.registerCommand(
@@ -275,6 +278,75 @@ export function registerEvaluateProvider(context: SuperColliderContext, provider
                 if (range !== null) {
                     provider.evaluateString(document, range)
                 }
+            }));
+
+    subscriptions.push(
+        vscode.commands.registerCommand(
+            'supercollider.evaluateRegionByName',
+            async () => {
+                const document = vscode.window.activeTextEditor.document;
+                let codeLensFeature = context.client.getFeature(vscodelc.CodeLensRequest.method);
+                let documentSymbolProvider = context.client.getFeature(vscodelc.DocumentSymbolRequest.method);
+                if (codeLensFeature && documentSymbolProvider) {
+                    const cancel = {
+                        isCancellationRequested: false,
+                        onCancellationRequested: new vscode.EventEmitter().event
+                    };
+
+                    const lenses = await codeLensFeature.getProvider(document).provider.provideCodeLenses(document, cancel);
+                    const symbols = await documentSymbolProvider.getProvider(document).provideDocumentSymbols(document, cancel);
+
+                    const options: vscode.QuickPickItem[] = lenses.map((lens, i) => {
+                        var regionName = symbols[i].name;
+                        return {
+                            label: regionName,
+                            description: lens.command.command,
+                            command: lens.command.command,
+                        }
+                    });
+
+                    let quickPick = vscode.window.createQuickPick();
+
+                    const lastRegions = lastEvaluated.get(document.uri) || [];
+                    quickPick.placeholder = 'Evaluate a region by name';
+                    quickPick.items = options;
+                    quickPick.canSelectMany = true;
+
+                    const preselected = options.filter((item) => lastRegions.includes(item.label));
+                    if (preselected.length == 1) {
+                        quickPick.activeItems = preselected;
+                    } else {
+                        quickPick.activeItems = quickPick.selectedItems = preselected;
+                    }
+                    quickPick.show();
+
+                    const selection = await new Promise<readonly vscode.QuickPickItem[] | undefined>((resolve) => {
+                        quickPick.onDidAccept(() => {
+                            if (quickPick.selectedItems.length > 0) {
+                                resolve(quickPick.selectedItems);
+                            } else {
+                                resolve(quickPick.activeItems);
+                            }
+                            quickPick.hide();
+                        });
+                        quickPick.onDidHide(() => {
+                            resolve(undefined);
+                            quickPick.dispose();
+                        });
+                    });
+
+                    if (selection) {
+                        lastEvaluated.set(document.uri, selection.map((item) => item.label));
+                        for (let item of selection) {
+
+                            vscode.commands.executeCommand(
+                                'supercollider.evaluateSelection',
+                                ...lenses[options.indexOf(item)].command.arguments);
+                            ;
+                        }
+                    }
+                }
+
             }));
 
     return new vscode.Disposable(() => {
