@@ -10,6 +10,7 @@ import { SuperColliderContext } from './context';
 import * as defaults from './util/defaults'
 import { getSclangPath } from './util/sclang';
 import { ServerStatusBar } from './ServerStatusBar';
+import { ControlPanel } from './ControlPanel';
 import { SuperColliderFormatter } from './providers/FormattingProvider';
 
 export const internalCommands = [
@@ -36,6 +37,7 @@ export async function activate(context: vscode.ExtensionContext) {
     let supercolliderContext: SuperColliderContext = null;
 
     const serverStatusBar = new ServerStatusBar();
+    const controlPanel = new ControlPanel(context);
 
     vscode.languages.registerDocumentDropEditProvider({ language: 'supercollider' }, {
         provideDocumentDropEdits: (document: TextDocument, position: Position, dataTransfer: DataTransfer, token: CancellationToken) => {
@@ -82,6 +84,17 @@ export async function activate(context: vscode.ExtensionContext) {
             supercolliderContext.client.onNotification('supercollider/serverStatus', (data) => {
                 serverStatusBar.updateStatusBar(data);
             });
+            
+            supercolliderContext.client.onNotification('supercollider/controlPanelData', (data) => {
+                controlPanel.updatePanelData(data);
+            });
+            
+            supercolliderContext.client.onNotification('supercollider/controlValue', (data) => {
+                controlPanel.updateValue(data.categoryId, data.controlId, data.value);
+            });
+            
+            // Set the client so the control panel can send notifications back
+            controlPanel.setClient(supercolliderContext.client);
         }
         catch (error) {
             outputChannel.append(error)

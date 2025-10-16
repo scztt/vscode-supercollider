@@ -300,6 +300,31 @@
                 "scopeName": "source.supercollider-log",
                 "path": "./syntaxes/supercollider-log.tmLanguage.json"
             }
+        ],
+        "views": {
+            "supercollider": [
+                {
+                    "id": "supercolliderControls",
+                    "name": "Controls",
+                    "icon": "$(symbol-number)",
+                    "contextualTitle": "SuperCollider Controls"
+                }
+            ]
+        },
+        "viewsContainers": {
+            "activitybar": [
+                {
+                    "id": "supercollider",
+                    "title": "SuperCollider",
+                    "icon": "$(music)"
+                }
+            ]
+        },
+        "viewsWelcome": [
+            {
+                "view": "supercolliderControls",
+                "contents": "No controls loaded.\n[Open SuperCollider File](command:supercollider.restart)"
+            }
         ]
     },
     "dependencies": {
