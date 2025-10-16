@@ -24,18 +24,20 @@ export type ControlSpec = NumericSpec | StringSpec | ActionSpec;
 
 export interface Control {
   path: string[]; // Path segments like ["audio", "oscillators", "freq"]
-  friendlyName?: string;
+  displayName?: string;
   spec: ControlSpec;
   value: number | string | boolean; // boolean for action toggle state
   normalizedValue?: number; // For numeric controls: 0-1 normalized value
   displayValue?: string; // For numeric controls: formatted display string
+  order?: number; // Order this control was encountered in the list
 }
 
 export interface Category {
   id: string;
-  friendlyName?: string;
+  displayName?: string;
   children: Map<string, Category>; // Nested categories
   controls: Control[]; // Controls directly in this category
+  order: number; // Order this category was first encountered
 }
 
 export interface ControlPanelData {
@@ -144,6 +146,9 @@ export class ControlPanelProvider implements vscode.TreeDataProvider<ControlItem
   private values: Map<string, number | string | boolean> = new Map(); // Key is path.join('/')
   private rootCategories: Map<string, Category> = new Map();
   private extensionUri: vscode.Uri;
+  private recentlyModified: Map<string, number> = new Map(); // Key is path.join('/'), value is timestamp
+  private badgeCleanupInterval: NodeJS.Timer | undefined;
+  private readonly BADGE_DURATION_MS = 5 * 1000;
 
   constructor(extensionUri: vscode.Uri) {
     this.extensionUri = extensionUri;
@@ -151,6 +156,9 @@ export class ControlPanelProvider implements vscode.TreeDataProvider<ControlItem
     this.data = this.createExampleData();
     this.buildCategoryTree();
     this.initializeValues();
+
+    // Start badge cleanup interval
+    this.startBadgeCleanup();
   }
 
   // Helper function to convert path to key
@@ -166,30 +174,34 @@ export class ControlPanelProvider implements vscode.TreeDataProvider<ControlItem
   // Build nested category tree from flat controls list
   private buildCategoryTree() {
     this.rootCategories.clear();
+    let orderCounter = 0;
 
-    for (const control of this.data.controls) {
+    // First pass: assign order to all controls and create categories
+    for (let i = 0; i < this.data.controls.length; i++) {
+      const control = this.data.controls[i];
       if (control.path.length === 0) continue;
+
+      // Assign order to the control
+      control.order = orderCounter++;
 
       let current = this.rootCategories;
 
       // Navigate/create path up to the control (all but last segment)
-      for (let i = 0; i < control.path.length - 1; i++) {
-        const segment = control.path[i];
+      for (let j = 0; j < control.path.length - 1; j++) {
+        const segment = control.path[j];
 
         if (!current.has(segment)) {
           current.set(segment, {
             id: segment,
-            friendlyName: segment.toUpperCase(),
+            displayName: segment.toUpperCase(),
             children: new Map(),
-            controls: []
+            controls: [],
+            order: orderCounter++
           });
         }
 
         current = current.get(segment)!.children;
       }
-
-      // Controls are added directly to their parent category in getChildren()
-      // No need to create a category for the control itself
     }
   }
 
@@ -198,7 +210,7 @@ export class ControlPanelProvider implements vscode.TreeDataProvider<ControlItem
       controls: [
         {
           path: ['info', 'status'],
-          friendlyName: 'System Status',
+          displayName: 'System Status',
           spec: {
             type: 'string',
             displayPropertyName: true
@@ -207,7 +219,7 @@ export class ControlPanelProvider implements vscode.TreeDataProvider<ControlItem
         },
         {
           path: ['audio', 'oscillators', 'freq'],
-          friendlyName: 'Frequency',
+          displayName: 'Frequency',
           spec: {
             type: 'numeric'
           },
@@ -217,7 +229,7 @@ export class ControlPanelProvider implements vscode.TreeDataProvider<ControlItem
         },
         {
           path: ['actions', 'record'],
-          friendlyName: 'Recording',
+          displayName: 'Recording',
           spec: {
             type: 'action',
             toggleable: true,
@@ -257,12 +269,15 @@ export class ControlPanelProvider implements vscode.TreeDataProvider<ControlItem
 
   getChildren(element?: ControlItem): Thenable<ControlItem[]> {
     if (!element) {
-      // Return root categories
+      // Return root categories sorted by order
       const items: ControlItem[] = [];
 
-      for (const [key, category] of this.rootCategories) {
+      const sortedRootCategories = Array.from(this.rootCategories.entries())
+        .sort(([, a], [, b]) => a.order - b.order);
+
+      for (const [key, category] of sortedRootCategories) {
         items.push(new ControlItem(
-          category.friendlyName || category.id,
+          category.displayName || category.id,
           vscode.TreeItemCollapsibleState.Expanded,
           'category',
           [key]
@@ -285,14 +300,20 @@ export class ControlPanelProvider implements vscode.TreeDataProvider<ControlItem
 
       const items: ControlItem[] = [];
 
+      // Collect all items (categories and controls) with their orders
+      const allItems: Array<{ item: ControlItem, order: number }> = [];
+
       // Add subcategories
-      for (const [key, category] of current) {
-        items.push(new ControlItem(
-          category.friendlyName || category.id,
-          vscode.TreeItemCollapsibleState.Expanded,
-          'category',
-          [...element.path, key]
-        ));
+      for (const [key, category] of current.entries()) {
+        allItems.push({
+          item: new ControlItem(
+            category.displayName || category.id,
+            vscode.TreeItemCollapsibleState.Expanded,
+            'category',
+            [...element.path, key]
+          ),
+          order: category.order
+        });
       }
 
       // Add controls that match this path
@@ -306,7 +327,7 @@ export class ControlPanelProvider implements vscode.TreeDataProvider<ControlItem
           const controlWithValue = { ...control, value: currentValue };
 
           const controlItem = new ControlItem(
-            control.friendlyName || control.path[control.path.length - 1],
+            control.displayName || control.path[control.path.length - 1],
             vscode.TreeItemCollapsibleState.None,
             'control',
             control.path,
@@ -318,9 +339,21 @@ export class ControlPanelProvider implements vscode.TreeDataProvider<ControlItem
             controlItem.iconPath = this.getSliderIconPath(controlWithValue);
           }
 
-          items.push(controlItem);
+          // Add badge if recently modified
+          if (this.isRecentlyModified(control.path)) {
+            controlItem.description = `${controlItem.description || ''} ●`.trim();
+          }
+
+          allItems.push({
+            item: controlItem,
+            order: control.order ?? 999999 // Fallback for controls without order
+          });
         }
       }
+
+      // Sort all items by order and extract the items
+      allItems.sort((a, b) => a.order - b.order);
+      items.push(...allItems.map(x => x.item));
 
       return Promise.resolve(items);
     }
@@ -337,6 +370,9 @@ export class ControlPanelProvider implements vscode.TreeDataProvider<ControlItem
     if (oldValue !== displayValue) {
       this.values.set(key, displayValue);
 
+      // Mark as recently modified with timestamp
+      this.recentlyModified.set(key, Date.now());
+
       // For numeric controls, also update normalized and display values
       if (control && control.spec.type === 'numeric') {
         if (normalizedValue !== undefined) {
@@ -348,6 +384,7 @@ export class ControlPanelProvider implements vscode.TreeDataProvider<ControlItem
       }
 
       console.log(`ControlPanel: Updated ${key} from ${oldValue} to ${displayValue}`);
+      // Refresh immediately to show the badge
       this.refresh();
     }
   }
@@ -428,6 +465,48 @@ export class ControlPanelProvider implements vscode.TreeDataProvider<ControlItem
     const theme = vscode.window.activeColorTheme.kind === vscode.ColorThemeKind.Dark ? 'dark' : 'light';
 
     return vscode.Uri.joinPath(this.extensionUri, 'images', 'slider', theme, `fill-${fillLevel}.svg`);
+  }
+
+  // Check if a control was recently modified
+  private isRecentlyModified(path: string[]): boolean {
+    const key = this.pathToKey(path);
+    return this.recentlyModified.has(key);
+  }
+
+  // Start the badge cleanup interval
+  private startBadgeCleanup() {
+    // Clear any existing interval
+    if (this.badgeCleanupInterval) {
+      clearInterval(this.badgeCleanupInterval);
+    }
+
+    // Run cleanup every second
+    this.badgeCleanupInterval = setInterval(() => {
+      const now = Date.now();
+      let needsRefresh = false;
+
+      // Check each recently modified item
+      for (const [key, timestamp] of this.recentlyModified) {
+        if (now - timestamp > this.BADGE_DURATION_MS) {
+          // Remove items older than BADGE_DURATION_MS
+          this.recentlyModified.delete(key);
+          needsRefresh = true;
+        }
+      }
+
+      // Only refresh if we removed any badges
+      if (needsRefresh) {
+        this.refresh();
+      }
+    }, 1000); // Check every second
+  }
+
+  // Clean up when provider is disposed
+  dispose() {
+    if (this.badgeCleanupInterval) {
+      clearInterval(this.badgeCleanupInterval);
+      this.badgeCleanupInterval = undefined;
+    }
   }
 }
 
@@ -599,13 +678,38 @@ export class ControlDetailWebviewProvider implements vscode.WebviewViewProvider 
             font-family: var(--vscode-font-family);
             color: var(--vscode-foreground);
             background-color: var(--vscode-editor-background);
-            line-height: 1.6;
+            line-height: 1.4;
+            overflow: hidden;
         }
-        .control-name {
-            font-weight: bold;
-            margin-bottom: 15px;
-            padding-bottom: 10px;
+        
+        /* Scale down for smaller panels */
+        @media (max-width: 400px) {
+            body { padding: 12px; font-size: 13px; }
+            .control-path { font-size: 12px; margin-bottom: 6px; padding-bottom: 4px; }
+            .content { margin-top: 8px; }
+        }
+        
+        @media (max-width: 300px) {
+            body { padding: 8px; font-size: 12px; }
+            .control-path { font-size: 11px; margin-bottom: 4px; padding-bottom: 3px; }
+            .content { margin-top: 6px; }
+        }
+        .control-path {
+            margin-bottom: 10px;
+            padding-bottom: 8px;
             border-bottom: 1px solid var(--vscode-input-border);
+            font-size: 14px;
+            line-height: 1.2;
+        }
+        .path-segment {
+            color: var(--vscode-foreground);
+        }
+        .path-separator {
+            color: var(--vscode-descriptionForeground);
+            margin: 0 6px;
+        }
+        .path-name {
+            font-weight: bold;
             color: var(--vscode-textLink-foreground);
         }
         .content {
@@ -627,7 +731,7 @@ export class ControlDetailWebviewProvider implements vscode.WebviewViewProvider 
     </style>
 </head>
 <body>
-    ${shouldShowName ? `<div class="control-name">${control.friendlyName || control.path[control.path.length - 1]}</div>` : ''}
+    ${shouldShowName ? this.getControlPathHtml(control) : ''}
     <div class="content">${renderedHtml}</div>
 </body>
 </html>`;
@@ -646,20 +750,52 @@ export class ControlDetailWebviewProvider implements vscode.WebviewViewProvider 
             font-family: var(--vscode-font-family);
             color: var(--vscode-foreground);
             background-color: var(--vscode-editor-background);
+            overflow: hidden;
         }
-        .control-name {
-            font-weight: bold;
-            margin-bottom: 15px;
-            padding-bottom: 10px;
+        
+        /* Scale down for smaller panels */
+        @media (max-width: 400px) {
+            body { padding: 12px; font-size: 13px; }
+            .control-path { font-size: 12px; margin-bottom: 6px; padding-bottom: 4px; }
+            .current-value { font-size: 20px; margin: 8px 0; padding: 8px; }
+            .slider-container { margin: 8px 0; }
+            .custom-slider { height: 45px; }
+            .info { margin-top: 8px; padding: 6px; font-size: 11px; }
+        }
+        
+        @media (max-width: 300px) {
+            body { padding: 8px; font-size: 12px; }
+            .control-path { font-size: 11px; margin-bottom: 4px; padding-bottom: 3px; }
+            .current-value { font-size: 18px; margin: 6px 0; padding: 6px; }
+            .slider-container { margin: 6px 0; }
+            .custom-slider { height: 35px; }
+            .info { margin-top: 6px; padding: 5px; font-size: 10px; }
+        }
+        .control-path {
+            margin-bottom: 10px;
+            padding-bottom: 8px;
             border-bottom: 1px solid var(--vscode-input-border);
+            font-size: 14px;
+            line-height: 1.2;
+            font-variant: small-caps;
+        }
+        .path-segment {
+            color: var(--vscode-foreground);
+        }
+        .path-separator {
+            color: var(--vscode-descriptionForeground);
+            margin: 0 6px;
+        }
+        .path-name {
+            font-weight: bold;
             color: var(--vscode-textLink-foreground);
         }
         .current-value {
-            font-size: 24px;
+            font-size: 18px;
             font-weight: bold;
             text-align: center;
-            margin: 20px 0;
-            padding: 15px;
+            margin: 2px 0;
+            padding: 2px;
             background-color: var(--vscode-input-background);
             border-radius: 6px;
             font-family: var(--vscode-editor-font-family);
@@ -671,36 +807,42 @@ export class ControlDetailWebviewProvider implements vscode.WebviewViewProvider 
             opacity: 0.9;
         }
         .slider-container {
-            margin: 20px 0;
+            margin: 4px 0;
+            position: relative;
         }
-        .slider {
+        .custom-slider {
             width: 100%;
-            -webkit-appearance: none;
-            height: 6px;
-            border-radius: 3px;
-            background: var(--vscode-input-background);
-            outline: none;
+            height: 26px;
+            position: relative;
+            cursor: ew-resize;
             margin: 10px 0;
         }
-        .slider::-webkit-slider-thumb {
-            -webkit-appearance: none;
-            width: 18px;
-            height: 18px;
-            border-radius: 50%;
-            background: var(--vscode-button-background);
-            cursor: pointer;
+        .slider-track {
+            width: 100%;
+            height: 100%;
+            background: var(--vscode-input-background);
+            border: 1px solid var(--vscode-input-border);
+            border-radius: 3px;
+            position: absolute;
+            top: 16px;
+            transform: translateY(-50%);
         }
-        .slider::-moz-range-thumb {
-            width: 18px;
-            height: 18px;
-            border-radius: 50%;
+        .slider-fill {
+            height: 100%;
             background: var(--vscode-button-background);
-            cursor: pointer;
-            border: none;
+            border-radius: 2px;
+        }
+        .slider-overlay {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            top: 0;
+            left: 0;
+            cursor: ew-resize;
         }
         .info {
-            margin-top: 20px;
-            padding: 10px;
+            margin-top: 12px;
+            padding: 8px;
             background-color: var(--vscode-input-background);
             border-radius: 4px;
             font-size: 12px;
@@ -709,22 +851,35 @@ export class ControlDetailWebviewProvider implements vscode.WebviewViewProvider 
     </style>
 </head>
 <body>
-    <div class="control-name">${control.friendlyName || control.path[control.path.length - 1]}</div>
+    ${this.getControlPathHtml(control)}
     <div class="current-value" id="valueDisplay">${displayValue}</div>
     
     <div class="slider-container">
-        <input type="range" class="slider" id="slider" 
-               min="0" max="1000" value="${normalizedValue * 1000}" 
-               step="1">
+        <div class="custom-slider" id="customSlider">
+            <div class="slider-track">
+                <div class="slider-fill" id="sliderFill"></div>
+            </div>
+            <div class="slider-overlay" id="sliderOverlay"></div>
+        </div>
     </div>
     
     <script>
         const vscode = acquireVsCodeApi();
-        const slider = document.getElementById('slider');
+        const sliderOverlay = document.getElementById('sliderOverlay');
+        const sliderFill = document.getElementById('sliderFill');
         const valueDisplay = document.getElementById('valueDisplay');
         
         let currentNormalized = ${normalizedValue};
         let currentDisplay = "${displayValue}";
+        
+        // Update visual slider fill
+        function updateSliderFill(normalized) {
+            const percentage = Math.max(0, Math.min(100, normalized * 100));
+            sliderFill.style.width = percentage + '%';
+        }
+        
+        // Initialize slider fill
+        updateSliderFill(currentNormalized);
         
         function updateDisplay(newDisplay) {
             valueDisplay.textContent = newDisplay;
@@ -738,22 +893,50 @@ export class ControlDetailWebviewProvider implements vscode.WebviewViewProvider 
             });
         }
         
-        // Slider updates - send normalized value directly
+        // Custom slider drag handling - click anywhere and drag relative to that point
         let isSliderDragging = false;
+        let sliderDragStartNormalized = 0;
+        let sliderDragStartX = 0;
         
-        slider.addEventListener('mousedown', () => {
+        sliderOverlay.addEventListener('mousedown', (e) => {
             isSliderDragging = true;
+            
+            // Store the current value and mouse position for relative dragging
+            sliderDragStartNormalized = currentNormalized;
+            sliderDragStartX = e.clientX;
+            
+            // NO immediate jump - only relative movement from this point
+            
+            e.preventDefault();
+            document.body.style.cursor = 'ew-resize';
         });
         
-        slider.addEventListener('mouseup', () => {
-            isSliderDragging = false;
-        });
+        function handleSliderMouseMove(e) {
+            if (!isSliderDragging) return;
+            
+            // Calculate movement from drag start
+            const rect = sliderOverlay.getBoundingClientRect();
+            const deltaX = e.clientX - sliderDragStartX;
+            const deltaNormalized = deltaX / rect.width;
+            
+            // Apply delta to the original click position
+            const newNormalized = Math.max(0, Math.min(1, sliderDragStartNormalized + deltaNormalized));
+            currentNormalized = newNormalized;
+            
+            updateSliderFill(currentNormalized);
+            sendNormalizedValue(currentNormalized);
+        }
         
-        slider.addEventListener('input', (e) => {
-            const normalized = parseInt(e.target.value) / 1000;
-            // Don't update display - wait for server to tell us new display value
-            sendNormalizedValue(normalized);
-        });
+        function handleSliderMouseUp() {
+            if (isSliderDragging) {
+                isSliderDragging = false;
+                document.body.style.cursor = 'default';
+                sendNormalizedValue(currentNormalized);
+            }
+        }
+        
+        document.addEventListener('mousemove', handleSliderMouseMove);
+        document.addEventListener('mouseup', handleSliderMouseUp);
         
         // Draggable value display - with live updates
         let isDragging = false;
@@ -799,8 +982,8 @@ export class ControlDetailWebviewProvider implements vscode.WebviewViewProvider 
             const newNormalized = Math.max(0, Math.min(1, dragStartNormalized + normalizedDelta));
             currentNormalized = newNormalized;
             
-            // Update slider position immediately
-            slider.value = newNormalized * 1000;
+            // Update custom slider fill immediately
+            updateSliderFill(newNormalized);
             
             // Send live update (throttled)
             sendLiveUpdate(newNormalized);
@@ -846,15 +1029,15 @@ export class ControlDetailWebviewProvider implements vscode.WebviewViewProvider 
             const newNormalized = Math.max(0, Math.min(1, currentNormalized + normalizedDelta));
             currentNormalized = newNormalized;
             
-            // Update slider position immediately
-            slider.value = newNormalized * 1000;
+            // Update custom slider fill immediately
+            updateSliderFill(newNormalized);
             
             // Send update
             sendNormalizedValue(newNormalized);
         });
         
         // Scroll wheel support for slider (horizontal scroll if available)
-        slider.addEventListener('wheel', (e) => {
+        sliderOverlay.addEventListener('wheel', (e) => {
             e.preventDefault();
             
             // Try horizontal scroll first (deltaX), fallback to vertical (deltaY)
@@ -868,8 +1051,8 @@ export class ControlDetailWebviewProvider implements vscode.WebviewViewProvider 
             const newNormalized = Math.max(0, Math.min(1, currentNormalized + normalizedDelta));
             currentNormalized = newNormalized;
             
-            // Update slider position immediately
-            slider.value = newNormalized * 1000;
+            // Update custom slider fill immediately
+            updateSliderFill(newNormalized);
             
             // Send update
             sendNormalizedValue(newNormalized);
@@ -881,20 +1064,45 @@ export class ControlDetailWebviewProvider implements vscode.WebviewViewProvider 
             if (message.command === 'updateValue') {
                 // Only update values if not dragging (either value drag or slider drag)
                 if (!isDragging && !isSliderDragging) {
-                    currentNormalized = message.normalizedValue;
-                    slider.value = currentNormalized * 1000;
+                    if (message.normalizedValue !== undefined) {
+                        currentNormalized = message.normalizedValue;
+                        updateSliderFill(currentNormalized);
+                    }
                 }
                 
                 // Always update display value
-                updateDisplay(message.displayValue);
+                if (message.displayValue !== undefined) {
+                    updateDisplay(message.displayValue);
+                }
             } else if (message.command === 'updateDisplayOnly') {
                 // During drag: only update display value, don't change slider/normalized
-                updateDisplay(message.displayValue);
+                if (message.displayValue !== undefined) {
+                    updateDisplay(message.displayValue);
+                }
             }
         });
     </script>
 </body>
 </html>`;
+  }
+
+  private getControlPathHtml(control: Control): string {
+    const pathSegments = control.path.slice(); // Copy the path
+    const name = pathSegments.pop(); // Remove and get the last segment (the name)
+
+    let pathHtml = '<div class="control-path">';
+
+    // Add parent segments
+    if (pathSegments.length > 0) {
+      pathHtml += pathSegments.map(segment => `<span class="path-segment">${segment}</span>`).join('<span class="path-separator">/</span>');
+      pathHtml += '<span class="path-separator">/</span>';
+    }
+
+    // Add the name (bold and blue)
+    pathHtml += `<span class="path-name">${control.displayName || name}</span>`;
+    pathHtml += '</div>';
+
+    return pathHtml;
   }
 
   private getActionControlHtml(control: Control): string {
@@ -903,7 +1111,7 @@ export class ControlDetailWebviewProvider implements vscode.WebviewViewProvider 
     const isOn = control.value === true;
     const isEnabled = spec.enabled !== false;
 
-    let buttonText = control.friendlyName || control.path[control.path.length - 1];
+    let buttonText = control.displayName || control.path[control.path.length - 1];
     let buttonClass = 'btn-primary';
 
     if (!isEnabled) {
@@ -919,22 +1127,49 @@ export class ControlDetailWebviewProvider implements vscode.WebviewViewProvider 
 <head>
     <style>
         body {
-            padding: 20px;
+            padding: 15px;
             font-family: var(--vscode-font-family);
             color: var(--vscode-foreground);
             background-color: var(--vscode-editor-background);
+            overflow: hidden;
         }
-        .control-name {
-            font-weight: bold;
-            margin-bottom: 15px;
-            padding-bottom: 10px;
+        
+        /* Scale down for smaller panels */
+        @media (max-width: 400px) {
+            body { padding: 10px; font-size: 13px; }
+            .control-path { font-size: 12px; margin-bottom: 6px; padding-bottom: 4px; }
+            .action-button { padding: 8px 12px; margin: 8px 0; font-size: 14px; }
+            .action-info { margin-top: 6px; padding: 6px; font-size: 11px; }
+        }
+        
+        @media (max-width: 300px) {
+            body { padding: 6px; font-size: 12px; }
+            .control-path { font-size: 11px; margin-bottom: 4px; padding-bottom: 3px; }
+            .action-button { padding: 6px 10px; margin: 6px 0; font-size: 13px; }
+            .action-info { margin-top: 4px; padding: 4px; font-size: 10px; }
+        }
+        .control-path {
+            margin-bottom: 10px;
+            padding-bottom: 8px;
             border-bottom: 1px solid var(--vscode-input-border);
+            font-size: 14px;
+            line-height: 1.2;
+        }
+        .path-segment {
+            color: var(--vscode-foreground);
+        }
+        .path-separator {
+            color: var(--vscode-descriptionForeground);
+            margin: 0 6px;
+        }
+        .path-name {
+            font-weight: bold;
             color: var(--vscode-textLink-foreground);
         }
         .action-button {
             width: 100%;
-            padding: 15px 20px;
-            margin: 20px 0;
+            padding: 12px 16px;
+            margin: 12px 0;
             border: none;
             border-radius: 6px;
             cursor: pointer;
@@ -968,8 +1203,8 @@ export class ControlDetailWebviewProvider implements vscode.WebviewViewProvider 
             opacity: 0.6;
         }
         .action-info {
-            margin-top: 15px;
-            padding: 10px;
+            margin-top: 10px;
+            padding: 8px;
             background-color: var(--vscode-input-background);
             border-radius: 4px;
             font-size: 12px;
@@ -978,7 +1213,7 @@ export class ControlDetailWebviewProvider implements vscode.WebviewViewProvider 
     </style>
 </head>
 <body>
-    <div class="control-name">${control.friendlyName || control.path[control.path.length - 1]}</div>
+    ${this.getControlPathHtml(control)}
     
     <button class="action-button ${buttonClass}" 
             ${isEnabled ? '' : 'disabled'} 
@@ -1056,6 +1291,13 @@ export class ControlPanel {
       }));
 
     context.subscriptions.push(this.treeView);
+
+    // Ensure cleanup on disposal
+    context.subscriptions.push({
+      dispose: () => {
+        this.provider.dispose();
+      }
+    });
   }
 
   private async editControlValue(path: string[], control: Control) {
@@ -1064,7 +1306,7 @@ export class ControlPanel {
     if (control.spec.type === 'numeric') {
       // For numeric controls, show a simple input for the display value
       const displayValue = control.displayValue || String(control.value);
-      const prompt = `${control.friendlyName || control.path[control.path.length - 1]} (current: ${displayValue})`;
+      const prompt = `${control.displayName || control.path[control.path.length - 1]} (current: ${displayValue})`;
 
       const input = await vscode.window.showInputBox({
         prompt: prompt,
@@ -1091,7 +1333,7 @@ export class ControlPanel {
       markdownString.isTrusted = true;
 
       await vscode.window.showInformationMessage(
-        `${control.friendlyName || control.path[control.path.length - 1]}`,
+        `${control.displayName || control.path[control.path.length - 1]}`,
         { modal: true, detail: currentValue as string }
       );
     }
@@ -1121,6 +1363,31 @@ export class ControlPanel {
     if (this.currentSelectedPath && this.currentSelectedPath.join('/') === path.join('/')) {
       this.detailView.updateControlValue(displayValue, normalizedValue);
     }
+  }
+
+  selectControl(path: string[]) {
+    // Find the control in our data
+    const control = this.provider.getControl(path);
+    if (!control) {
+      console.log(`Control not found for path: ${path.join('/')}`);
+      return;
+    }
+
+    // Expand the tree to reveal the control (if needed)
+    this.expandPathToControl(path);
+
+    // Set the current selected path and update the detail view
+    this.currentSelectedPath = path;
+    this.detailView.showControl(control, path);
+
+    console.log(`Selected control: ${path.join('/')}`);
+  }
+
+  private expandPathToControl(path: string[]) {
+    // For now, we'll just expand all parent categories
+    // In a future enhancement, we could use the tree view API to expand specific nodes
+    // but this requires more complex tree node tracking
+    console.log(`Expanding path to reveal control: ${path.join('/')}`);
   }
 
   setClient(client: any) {
