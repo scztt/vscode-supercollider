@@ -3,12 +3,6 @@ import * as vscode from "vscode";
 // Interface definitions for control specifications
 export interface NumericSpec {
   type: 'numeric';
-  min: number;
-  max: number;
-  step: number; // 0 for no grid
-  unit?: string; // e.g., "hz"
-  mapping: 'lin' | 'linear' | 'exp' | 'exponential' | 'sin' | 'cos' | 'db' | number;
-  decimals: number; // number of decimal places to display
 }
 
 export interface StringSpec {
@@ -26,151 +20,6 @@ export interface ActionSpec {
   colorOff?: string; // VSCode theme color when off (e.g., 'disabledForeground')
 }
 
-// Mapping utility functions
-function dbToAmp(db: number): number {
-  return Math.pow(10, db / 20);
-}
-
-function ampToDb(amp: number): number {
-  return 20 * Math.log10(Math.max(amp, 1e-10)); // Avoid log of 0
-}
-
-function lincurve(value: number, inMin: number, inMax: number, outMin: number, outMax: number, curve: number): number {
-  // Clip input
-  if (value <= inMin) return outMin;
-  if (value >= inMax) return outMax;
-  
-  if (Math.abs(curve) < 0.001) {
-    // Linear mapping
-    return (value - inMin) / (inMax - inMin) * (outMax - outMin) + outMin;
-  }
-  
-  const grow = Math.exp(curve);
-  const a = (outMax - outMin) / (1.0 - grow);
-  const b = outMin + a;
-  const scaled = (value - inMin) / (inMax - inMin);
-  
-  return b - (a * Math.pow(grow, scaled));
-}
-
-function curvelin(value: number, inMin: number, inMax: number, outMin: number, outMax: number, curve: number): number {
-  // Clip input
-  if (value <= inMin) return outMin;
-  if (value >= inMax) return outMax;
-  
-  if (Math.abs(curve) < 0.001) {
-    // Linear mapping
-    return (value - inMin) / (inMax - inMin) * (outMax - outMin) + outMin;
-  }
-  
-  const grow = Math.exp(curve);
-  const a = (inMax - inMin) / (1.0 - grow);
-  const b = inMin + a;
-  
-  return Math.log((b - value) / a) * (outMax - outMin) / curve + outMin;
-}
-
-// Normalize value from spec range to [0, 1]
-function normalizeValue(value: number, spec: NumericSpec): number {
-  const mapping = spec.mapping;
-  
-  if (typeof mapping === 'number') {
-    // Numeric warp/curve value
-    return curvelin(value, spec.min, spec.max, 0, 1, mapping);
-  }
-  
-  switch (mapping) {
-    case 'exp':
-    case 'exponential': {
-      const minLog = Math.log(Math.max(spec.min, 1e-10));
-      const maxLog = Math.log(Math.max(spec.max, 1e-10));
-      const valueLog = Math.log(Math.max(value, 1e-10));
-      return (valueLog - minLog) / (maxLog - minLog);
-    }
-    
-    case 'sin': {
-      const range = spec.max - spec.min;
-      const normalized = (value - spec.min) / range;
-      return Math.asin(normalized * 2 - 1) / Math.PI + 0.5;
-    }
-    
-    case 'cos': {
-      const range = spec.max - spec.min;
-      const normalized = (value - spec.min) / range;
-      return Math.acos(1 - normalized * 2) / Math.PI;
-    }
-    
-    case 'db': {
-      const minAmp = dbToAmp(spec.min);
-      const maxAmp = dbToAmp(spec.max);
-      const valueAmp = dbToAmp(value);
-      const range = maxAmp - minAmp;
-      
-      if (range > 0) {
-        return Math.sqrt((valueAmp - minAmp) / range);
-      } else {
-        return 1 - Math.sqrt(1 - ((valueAmp - minAmp) / range));
-      }
-    }
-    
-    case 'lin':
-    case 'linear':
-    default:
-      return (value - spec.min) / (spec.max - spec.min);
-  }
-}
-
-// Denormalize value from [0, 1] to spec range
-function denormalizeValue(normalized: number, spec: NumericSpec): number {
-  const mapping = spec.mapping;
-  
-  if (typeof mapping === 'number') {
-    // Numeric warp/curve value
-    return lincurve(normalized, 0, 1, spec.min, spec.max, mapping);
-  }
-  
-  switch (mapping) {
-    case 'exp':
-    case 'exponential': {
-      const minLog = Math.log(Math.max(spec.min, 1e-10));
-      const maxLog = Math.log(Math.max(spec.max, 1e-10));
-      const valueLog = minLog + normalized * (maxLog - minLog);
-      return Math.exp(valueLog);
-    }
-    
-    case 'sin': {
-      const angle = (normalized - 0.5) * Math.PI;
-      const sinValue = (Math.sin(angle) + 1) / 2;
-      return spec.min + sinValue * (spec.max - spec.min);
-    }
-    
-    case 'cos': {
-      const angle = normalized * Math.PI;
-      const cosValue = (1 - Math.cos(angle)) / 2;
-      return spec.min + cosValue * (spec.max - spec.min);
-    }
-    
-    case 'db': {
-      const minAmp = dbToAmp(spec.min);
-      const maxAmp = dbToAmp(spec.max);
-      const range = maxAmp - minAmp;
-      
-      let valueAmp: number;
-      if (range > 0) {
-        valueAmp = normalized * normalized * range + minAmp;
-      } else {
-        valueAmp = ((1 - Math.pow(1 - normalized, 2)) * range + minAmp);
-      }
-      
-      return ampToDb(valueAmp);
-    }
-    
-    case 'lin':
-    case 'linear':
-    default:
-      return spec.min + normalized * (spec.max - spec.min);
-  }
-}
 
 export type ControlSpec = NumericSpec | StringSpec | ActionSpec;
 
@@ -179,6 +28,8 @@ export interface Control {
   friendlyName?: string;
   spec: ControlSpec;
   value: number | string | boolean; // boolean for action toggle state
+  normalizedValue?: number; // For numeric controls: 0-1 normalized value
+  displayValue?: string; // For numeric controls: formatted display string
 }
 
 export interface Category {
@@ -235,12 +86,8 @@ export class ControlItem extends vscode.TreeItem {
   }
 
   private getControlDescription(control: Control): string {
-    if (control.spec.type === 'numeric' && typeof control.value === 'number') {
-      const spec = control.spec;
-      const valueStr = control.value.toFixed(spec.decimals);
-      const unitStr = spec.unit ? ` ${spec.unit}` : '';
-
-      return `${valueStr}${unitStr}`;
+    if (control.spec.type === 'numeric') {
+      return control.displayValue || String(control.value);
     } else if (control.spec.type === 'string' && typeof control.value === 'string') {
       // Don't show description if displayPropertyName is false (content will be in label)
       if (control.spec.displayPropertyName === false) {
@@ -307,40 +154,6 @@ export class ControlItem extends vscode.TreeItem {
     return plainText.length > 50 ? plainText.substring(0, 50) + '...' : plainText;
   }
 
-  private getSliderIcon(value: number, spec: NumericSpec, extensionPath: vscode.Uri): vscode.Uri {
-    // Normalize the value to 0..1 range
-    let normalized: number;
-    if (spec.mapping === 'exponential') {
-      const minLog = Math.log(spec.min);
-      const maxLog = Math.log(spec.max);
-      const valueLog = Math.log(value);
-      normalized = (valueLog - minLog) / (maxLog - minLog);
-    } else {
-      normalized = (value - spec.min) / (spec.max - spec.min);
-    }
-
-    // Clamp to 0..1
-    normalized = Math.max(0, Math.min(1, normalized));
-
-    // Convert to percentage for icon selection
-    const percentage = normalized * 100;
-
-    // Choose appropriate fill level icon
-    let fillLevel: string;
-    if (percentage <= 12.5) {
-      fillLevel = 'fill-0';
-    } else if (percentage <= 37.5) {
-      fillLevel = 'fill-25';
-    } else if (percentage <= 62.5) {
-      fillLevel = 'fill-50';
-    } else if (percentage <= 87.5) {
-      fillLevel = 'fill-75';
-    } else {
-      fillLevel = 'fill-100';
-    }
-
-    return vscode.Uri.joinPath(extensionPath, 'images', 'slider', `${fillLevel}.svg`);
-  }
 }
 
 export class ControlPanelProvider implements vscode.TreeDataProvider<ControlItem> {
@@ -409,29 +222,21 @@ export class ControlPanelProvider implements vscode.TreeDataProvider<ControlItem
               id: 'freq',
               friendlyName: 'Frequency',
               spec: {
-                type: 'numeric',
-                min: 20,
-                max: 20000,
-                step: 0,
-                unit: 'Hz',
-                mapping: 'exponential',
-                decimals: 2
+                type: 'numeric'
               },
-              value: 440
+              value: 440,
+              normalizedValue: 0.3,
+              displayValue: '440.00 Hz'
             },
             {
               id: 'amp',
               friendlyName: 'Amplitude',
               spec: {
-                type: 'numeric',
-                min: 0,
-                max: 1,
-                step: 0.01,
-                unit: '',
-                mapping: 'linear',
-                decimals: 3
+                type: 'numeric'
               },
-              value: 0.5
+              value: 0.5,
+              normalizedValue: 0.5,
+              displayValue: '0.500'
             }
           ]
         },
@@ -443,29 +248,21 @@ export class ControlPanelProvider implements vscode.TreeDataProvider<ControlItem
               id: 'cutoff',
               friendlyName: 'Cutoff Frequency',
               spec: {
-                type: 'numeric',
-                min: 20,
-                max: 20000,
-                step: 0,
-                unit: 'Hz',
-                mapping: 'exponential',
-                decimals: 1
+                type: 'numeric'
               },
-              value: 1000
+              value: 1000,
+              normalizedValue: 0.7,
+              displayValue: '1000.0 Hz'
             },
             {
               id: 'resonance',
               friendlyName: 'Resonance',
               spec: {
-                type: 'numeric',
-                min: 0.1,
-                max: 30,
-                step: 0.1,
-                unit: '',
-                mapping: 'exponential',
-                decimals: 1
+                type: 'numeric'
               },
-              value: 1.0
+              value: 1.0,
+              normalizedValue: 0.09,
+              displayValue: '1.0'
             }
           ]
         },
@@ -589,7 +386,7 @@ export class ControlPanelProvider implements vscode.TreeDataProvider<ControlItem
 
             // Set custom slider icon for numeric controls
             if (controlWithValue.spec.type === 'numeric') {
-              controlItem.iconPath = this.getSliderIconPath(controlWithValue.value as number, controlWithValue.spec as NumericSpec);
+              controlItem.iconPath = this.getSliderIconPath(controlWithValue);
             }
 
             return controlItem;
@@ -608,14 +405,26 @@ export class ControlPanelProvider implements vscode.TreeDataProvider<ControlItem
     this.refresh();
   }
 
-  // Update a single value
-  updateValue(categoryId: string, controlId: string, value: number | string | boolean) {
+  // Update a single value - for numeric controls, also update normalized/display values
+  updateValue(categoryId: string, controlId: string, displayValue: string, normalizedValue?: number) {
     const key = `${categoryId}.${controlId}`;
     const oldValue = this.values.get(key);
+    const control = this.getControl(categoryId, controlId);
 
-    if (oldValue !== value) {
-      this.values.set(key, value);
-      console.log(`ControlPanel: Updated ${key} from ${oldValue} to ${value}`);
+    if (oldValue !== displayValue) {
+      this.values.set(key, displayValue);
+
+      // For numeric controls, also update normalized and display values
+      if (control && control.spec.type === 'numeric') {
+        if (normalizedValue !== undefined) {
+          control.normalizedValue = normalizedValue;
+        }
+        if (displayValue !== undefined) {
+          control.displayValue = displayValue;
+        }
+      }
+
+      console.log(`ControlPanel: Updated ${key} from ${oldValue} to ${displayValue}`);
       this.refresh();
     }
   }
@@ -626,9 +435,18 @@ export class ControlPanelProvider implements vscode.TreeDataProvider<ControlItem
     return this.values.get(key);
   }
 
-  // Handle value change from UI
+  // Handle value change from UI - expects normalized values for numeric controls
   handleValueChange(categoryId: string, controlId: string, newValue: number | string | boolean, client?: any) {
-    this.updateValue(categoryId, controlId, newValue);
+    const control = this.getControl(categoryId, controlId);
+
+    if (control && control.spec.type === 'numeric') {
+      // For numeric controls, newValue should be normalized (0-1)
+      // Update the normalized value but keep the old display value until server responds
+      control.normalizedValue = newValue as number;
+    } else {
+      // For string/action controls, update as before
+      // this.updateValue(categoryId, controlId, newValue);
+    }
 
     // Send notification to SuperCollider using new format
     console.log(`ControlPanel: Sending value change to SuperCollider - ${categoryId}.${controlId} = ${newValue}`);
@@ -679,10 +497,10 @@ export class ControlPanelProvider implements vscode.TreeDataProvider<ControlItem
     return undefined;
   }
 
-  // Get slider icon path based on value
-  private getSliderIconPath(value: number, spec: NumericSpec): vscode.Uri {
-    // Normalize the value to 0..1 range using the centralized function
-    const normalized = Math.max(0, Math.min(1, normalizeValue(value, spec)));
+  // Get slider icon path based on normalized value
+  private getSliderIconPath(control: Control): vscode.Uri {
+    // Use normalized value directly (0..1 range)
+    const normalized = Math.max(0, Math.min(1, control.normalizedValue || 0));
 
     // Convert to percentage and round to nearest 10%
     const percentage = normalized * 100;
@@ -767,14 +585,32 @@ export class ControlDetailWebviewProvider implements vscode.WebviewViewProvider 
     }
   }
 
-  public updateControlValue(value: number | string | boolean) {
-    if (this._isDragging) {
-      console.log(`Blocking server update during drag: ${value}`);
-      return; // Block updates during drag
-    }
+  public updateControlValue(displayValue: string, normalizedValue?: number) {
+    if (this._currentControl && this._currentControl.spec.type === 'numeric') {
+      // Always update the control values
+      this._currentControl.displayValue = displayValue;
+      if (normalizedValue !== undefined) {
+        this._currentControl.normalizedValue = normalizedValue;
+      }
 
-    if (this._currentControl) {
-      this._currentControl.value = value;
+      // Update the webview with new values (unless dragging)
+      // if (!this._isDragging) {
+      //   this.updateWebview(this._currentControl, this._currentCategoryId, this._currentControlId);
+      // } else {
+      //   // During drag, only update the display value in the webview
+      //   this._view?.webview.postMessage({
+      //     command: 'updateDisplayOnly',
+      //     displayValue: displayValue
+      //   });
+      // }
+      this._view?.webview.postMessage({
+        command: 'updateValue',
+        displayValue: displayValue,
+        normalizedValue: normalizedValue,
+      });
+    } else if (this._currentControl) {
+      // For non-numeric controls
+      this._currentControl.value = displayValue;
       this.updateWebview(this._currentControl, this._currentCategoryId, this._currentControlId);
     }
   }
@@ -904,9 +740,8 @@ export class ControlDetailWebviewProvider implements vscode.WebviewViewProvider 
   }
 
   private getNumericControlHtml(control: Control): string {
-    const spec = control.spec as NumericSpec;
-    const value = control.value as number;
-    const normalizedValue = this.normalizeValue(value, spec);
+    const displayValue = control.displayValue || String(control.value);
+    const normalizedValue = control.normalizedValue || 0;
 
     return `<!DOCTYPE html>
 <html>
@@ -994,129 +829,78 @@ export class ControlDetailWebviewProvider implements vscode.WebviewViewProvider 
 </head>
 <body>
     <div class="control-name">${control.friendlyName || control.id}</div>
-    <div class="current-value" id="valueDisplay">${value.toFixed(spec.decimals)}${spec.unit ? ' ' + spec.unit : ''}</div>
+    <div class="current-value" id="valueDisplay">${displayValue}</div>
     
     <div class="slider-container">
         <input type="range" class="slider" id="slider" 
                min="0" max="1000" value="${normalizedValue * 1000}" 
-               step="${spec.step > 0 ? 1 : 'any'}">
-        <div class="range-labels">
-            <span>${spec.min}${spec.unit ? ' ' + spec.unit : ''}</span>
-            <span>${spec.max}${spec.unit ? ' ' + spec.unit : ''}</span>
-        </div>
+               step="1">
     </div>
     
-    <table class="spec-table">
-        <tr><td>Range</td><td>${spec.min} - ${spec.max}</td></tr>
-        <tr><td>Step</td><td>${spec.step > 0 ? spec.step : 'Continuous'}</td></tr>
-        <tr><td>Mapping</td><td>${spec.mapping}</td></tr>
-        <tr><td>Decimals</td><td>${spec.decimals}</td></tr>
-        ${spec.unit ? `<tr><td>Unit</td><td>${spec.unit}</td></tr>` : ''}
-    </table>
+    <div class="info">
+        Drag value or slider to adjust. Control uses normalized values (0-1).
+    </div>
     
     <script>
         const vscode = acquireVsCodeApi();
         const slider = document.getElementById('slider');
         const valueDisplay = document.getElementById('valueDisplay');
         
-        const spec = ${JSON.stringify(spec)};
-        let currentValue = ${value};
+        let currentNormalized = ${normalizedValue};
+        let currentDisplay = "${displayValue}";
         
-        function normalizeValue(val) {
-            const isExp = spec.mapping === '\\\\exp' || spec.mapping === '\\\\exponential' || spec.mapping === 'exponential';
-            if (isExp) {
-                const minLog = Math.log(spec.min);
-                const maxLog = Math.log(spec.max);
-                const valueLog = Math.log(val);
-                return (valueLog - minLog) / (maxLog - minLog);
-            } else {
-                return (val - spec.min) / (spec.max - spec.min);
-            }
+        function updateDisplay(newDisplay) {
+            valueDisplay.textContent = newDisplay;
+            currentDisplay = newDisplay;
         }
         
-        function denormalizeValue(normalized) {
-            const isExp = spec.mapping === '\\\\exp' || spec.mapping === '\\\\exponential' || spec.mapping === 'exponential';
-            if (isExp) {
-                const minLog = Math.log(spec.min);
-                const maxLog = Math.log(spec.max);
-                const valueLog = minLog + normalized * (maxLog - minLog);
-                return Math.exp(valueLog);
-            } else {
-                return spec.min + normalized * (spec.max - spec.min);
-            }
-        }
-        
-        function updateValue(newValue) {
-            if (spec.step > 0) {
-                newValue = Math.round(newValue / spec.step) * spec.step;
-            }
-            
-            currentValue = Math.max(spec.min, Math.min(spec.max, newValue));
-            
-            const normalized = normalizeValue(currentValue);
-            slider.value = normalized * 1000;
-            
-            valueDisplay.textContent = currentValue.toFixed(spec.decimals) + 
-                (spec.unit ? ' ' + spec.unit : '');
-            
+        function sendNormalizedValue(normalized) {
             vscode.postMessage({
                 command: 'valueChanged',
-                value: currentValue
+                value: normalized
             });
         }
         
-        // Debounced slider updates to avoid server conflicts
-        let sliderUpdateTimeout = null;
+        // Slider updates - send normalized value directly
+        let isSliderDragging = false;
+        
+        slider.addEventListener('mousedown', () => {
+            isSliderDragging = true;
+        });
+        
+        slider.addEventListener('mouseup', () => {
+            isSliderDragging = false;
+        });
         
         slider.addEventListener('input', (e) => {
             const normalized = parseInt(e.target.value) / 1000;
-            const newValue = denormalizeValue(normalized);
-            
-            // Update display immediately
-            updateDisplayOnly(newValue);
-            
-            // Debounce server updates
-            clearTimeout(sliderUpdateTimeout);
-            sliderUpdateTimeout = setTimeout(() => {
-                updateValue(currentValue);
-            }, 100); // Send to server 100ms after last slider change
+            // currentNormalized = normalized;
+            // Don't update display - wait for server to tell us new display value
+            sendNormalizedValue(normalized);
         });
         
         // Draggable value display - with live updates
         let isDragging = false;
+        let dragStartNormalized = 0; // Store original value when drag starts
         let lastY = 0;
-        let dragStartTime = 0;
         let lastUpdateTime = 0;
         const THROTTLE_MS = 16; // ~60fps for live updates
         
-        // Function to update display only (no server notification)
-        function updateDisplayOnly(newValue) {
-            if (spec.step > 0) {
-                newValue = Math.round(newValue / spec.step) * spec.step;
-            }
-            
-            currentValue = Math.max(spec.min, Math.min(spec.max, newValue));
-            
-            const normalized = normalizeValue(currentValue);
-            slider.value = normalized * 1000;
-            
-            valueDisplay.textContent = currentValue.toFixed(spec.decimals) + 
-                (spec.unit ? ' ' + spec.unit : '');
-        }
-        
-        // Function to send live updates during drag (throttled)
-        function sendLiveUpdate(newValue) {
+        function sendLiveUpdate(normalized) {
             const now = Date.now();
             if (now - lastUpdateTime >= THROTTLE_MS) {
                 lastUpdateTime = now;
-                updateValue(newValue);
+                sendNormalizedValue(normalized);
             }
         }
         
+        let dragStartY = 0;
+        
         valueDisplay.addEventListener('mousedown', (e) => {
             isDragging = true;
+            dragStartNormalized = currentNormalized; // Remember start point
+            dragStartY = e.clientY; // Remember start Y position
             lastY = e.clientY;
-            dragStartTime = Date.now();
             lastUpdateTime = 0; // Reset throttle
             e.preventDefault();
             document.body.style.cursor = 'ns-resize';
@@ -1127,41 +911,111 @@ export class ControlDetailWebviewProvider implements vscode.WebviewViewProvider 
             });
         });
         
-        document.addEventListener('mousemove', (e) => {
+        function handleMouseMove(e) {
             if (!isDragging) return;
             
-            const deltaY = lastY - e.clientY;
-            lastY = e.clientY;
+            // Calculate total movement from drag start
+            const totalDeltaY = dragStartY - e.clientY; // Inverted: up = positive
             
-            // Work in normalized 0..1 space for consistent behavior across mappings
-            const currentNormalized = normalizeValue(currentValue);
+            // Sensitivity: 0.5% change per pixel (adjustable)
+            const sensitivity = e.shiftKey ? 0.001 : 0.005; // More precise with Shift
+            const normalizedDelta = totalDeltaY * sensitivity;
             
-            // Base increment: 0.5% of normalized range per pixel
-            let increment = 0.005;
+            // Apply delta to the ORIGINAL start value (not current)
+            const newNormalized = Math.max(0, Math.min(1, dragStartNormalized + normalizedDelta));
+            currentNormalized = newNormalized;
             
-            // Smaller increment when holding shift
-            if (e.shiftKey) {
-                increment = 0.001; // 0.1% when shift is held
-            }
+            // Update slider position immediately
+            slider.value = newNormalized * 1000;
             
-            const normalizedDelta = deltaY * increment;
-            const newNormalized = Math.max(0, Math.min(1, currentNormalized + normalizedDelta));
-            const newValue = denormalizeValue(newNormalized);
-            
-            updateDisplayOnly(newValue); // Update display immediately
-            sendLiveUpdate(newValue); // Send throttled live updates
-        });
+            // Send live update (throttled)
+            sendLiveUpdate(newNormalized);
+        }
         
-        document.addEventListener('mouseup', () => {
+        function handleMouseUp() {
             if (isDragging) {
                 isDragging = false;
-                document.body.style.cursor = '';
+                document.body.style.cursor = 'default';
                 
-                // Send final value and notify drag end
-                updateValue(currentValue);
+                // Send final value
+                sendNormalizedValue(currentNormalized);
+                
+                // Notify extension that we're ending a drag
                 vscode.postMessage({
                     command: 'dragEnd'
                 });
+            }
+        }
+        
+        document.addEventListener('mousemove', handleMouseMove);
+        document.addEventListener('mouseup', handleMouseUp);
+        
+        // Handle escape key to cancel drag
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && isDragging) {
+                handleMouseUp();
+            }
+        });
+        
+        // Scroll wheel support for value display (vertical scroll)
+        valueDisplay.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            
+            // Use deltaY for vertical scrolling
+            const delta = -e.deltaY; // Invert so scroll up = increase value
+            
+            // Sensitivity: smaller than mouse drag
+            const sensitivity = e.shiftKey ? 0.0002 : 0.001; // More precise with Shift
+            const normalizedDelta = delta * sensitivity;
+            
+            // Apply delta to current normalized value
+            const newNormalized = Math.max(0, Math.min(1, currentNormalized + normalizedDelta));
+            currentNormalized = newNormalized;
+            
+            // Update slider position immediately
+            slider.value = newNormalized * 1000;
+            
+            // Send update
+            sendNormalizedValue(newNormalized);
+        });
+        
+        // Scroll wheel support for slider (horizontal scroll if available)
+        slider.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            
+            // Try horizontal scroll first (deltaX), fallback to vertical (deltaY)
+            const delta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? -e.deltaX : -e.deltaY;
+            
+            // Sensitivity: smaller than mouse drag
+            const sensitivity = e.shiftKey ? 0.0002 : 0.001; // More precise with Shift
+            const normalizedDelta = delta * sensitivity;
+            
+            // Apply delta to current normalized value
+            const newNormalized = Math.max(0, Math.min(1, currentNormalized + normalizedDelta));
+            currentNormalized = newNormalized;
+            
+            // Update slider position immediately
+            slider.value = newNormalized * 1000;
+            
+            // Send update
+            sendNormalizedValue(newNormalized);
+        });
+        
+        // Listen for updates from extension
+        window.addEventListener('message', event => {
+            const message = event.data;
+            if (message.command === 'updateValue') {
+                // Only update values if not dragging (either value drag or slider drag)
+                currentNormalized = message.normalizedValue;
+                
+                if (!isSliderDragging) {
+                    slider.value = currentNormalized * 1000;
+                }
+                
+                updateDisplay(message.displayValue);
+            } else if (message.command === 'updateDisplayOnly') {
+                // During drag: only update display value, don't change slider/normalized
+                updateDisplay(message.displayValue);
             }
         });
     </script>
@@ -1303,17 +1157,6 @@ export class ControlDetailWebviewProvider implements vscode.WebviewViewProvider 
 </html>`;
   }
 
-  private normalizeValue(value: number, spec: NumericSpec): number {
-    if (spec.mapping === 'exponential') {
-      const minLog = Math.log(spec.min);
-      const maxLog = Math.log(spec.max);
-      const valueLog = Math.log(value);
-      return (valueLog - minLog) / (maxLog - minLog);
-    } else {
-      // Linear mapping (default) - supports \lin, \linear, linear
-      return (value - spec.min) / (spec.max - spec.min);
-    }
-  }
 }
 
 export class ControlPanel {
@@ -1406,31 +1249,29 @@ export class ControlPanel {
   private async editControlValue(categoryId: string, controlId: string, control: Control) {
     const currentValue = this.provider.getValue(categoryId, controlId) ?? control.value;
 
-    if (control.spec.type === 'numeric' && typeof currentValue === 'number') {
-      const spec = control.spec;
-      const prompt = `${control.friendlyName || control.id} (${spec.min} - ${spec.max}${spec.unit ? ' ' + spec.unit : ''})`;
+    if (control.spec.type === 'numeric') {
+      // For numeric controls, show a simple input for the display value
+      const displayValue = control.displayValue || String(control.value);
+      const prompt = `${control.friendlyName || control.id} (current: ${displayValue})`;
 
       const input = await vscode.window.showInputBox({
         prompt: prompt,
-        value: currentValue.toFixed(spec.decimals),
+        value: displayValue,
         validateInput: (value) => {
           const num = parseFloat(value);
           if (isNaN(num)) {
             return 'Please enter a valid number';
-          }
-          if (num < spec.min || num > spec.max) {
-            return `Value must be between ${spec.min} and ${spec.max}`;
           }
           return null;
         }
       });
 
       if (input !== undefined) {
-        let newValue = parseFloat(input);
-        if (spec.step > 0) {
-          newValue = Math.round(newValue / spec.step) * spec.step;
-        }
-        this.provider.handleValueChange(categoryId, controlId, newValue, this.client);
+        // For simplicity, we could map this input to a normalized value
+        // But since we're keeping the panel "dumb", let's just show a message
+        vscode.window.showInformationMessage(
+          'Direct value editing not implemented. Use the slider or drag controls.'
+        );
       }
     } else if (control.spec.type === 'string') {
       // For string controls, show them in a preview
@@ -1463,12 +1304,12 @@ export class ControlPanel {
     }
   }
 
-  updateValue(categoryId: string, controlId: string, value: number | string | boolean) {
-    this.provider.updateValue(categoryId, controlId, value);
+  updateValue(categoryId: string, controlId: string, displayValue: string, normalizedValue?: number) {
+    this.provider.updateValue(categoryId, controlId, displayValue, normalizedValue);
 
     // If this is the currently selected control, update the detail view
     if (this.currentSelectedCategory === categoryId && this.currentSelectedControl === controlId) {
-      this.detailView.updateControlValue(value);
+      this.detailView.updateControlValue(displayValue, normalizedValue);
     }
   }
 

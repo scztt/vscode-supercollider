@@ -84,25 +84,25 @@ export async function activate(context: vscode.ExtensionContext) {
             supercolliderContext.client.onNotification('supercollider/serverStatus', (data) => {
                 serverStatusBar.updateStatusBar(data);
             });
-            
+
             // Control panel notifications - new format
             supercolliderContext.client.onNotification('supercollider/controlPanelSpec', (data) => {
                 controlPanel.updatePanelData(data.specification);
             });
-            
+
             supercolliderContext.client.onNotification('supercollider/controlPanelValue', (data) => {
-                controlPanel.updateValue(data.category, data.id, data.value);
+                controlPanel.updateValue(data.category, data.id, data.displayValue, data.normalizedValue);
             });
-            
+
             // Legacy control panel notifications - keep for compatibility
             supercolliderContext.client.onNotification('supercollider/controlPanelData', (data) => {
                 controlPanel.updatePanelData(data);
             });
-            
+
             supercolliderContext.client.onNotification('supercollider/controlValue', (data) => {
                 controlPanel.updateValue(data.categoryId, data.controlId, data.value);
             });
-            
+
             // Set the client so the control panel can send notifications back
             controlPanel.setClient(supercolliderContext.client);
         }

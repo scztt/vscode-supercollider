@@ -332,7 +332,7 @@
                 {
                     "id": "supercollider",
                     "title": "SuperCollider",
-                    "icon": "$(music)"
+                    "icon": "images/sc_logo.svg"
                 }
             ]
         },

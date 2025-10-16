@@ -1,0 +1,33 @@
+<?xml version="1.0" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1024" height="1024" viewBox="0 0 1024 1024" version="1.1">
+    <desc>SuperCollider Cube SVG - Nathan Ho 2015 (Mask Version - Clean)</desc>
+    <defs>
+        <mask id="ringMask">
+            <!-- White allows, black masks out -->
+            <rect x="0" y="0" width="1024" height="1024" fill="white" />
+            <rect x="64" y="64" width="896" height="896" fill="black" />
+            <rect x="128" y="128" width="768" height="768" fill="white" />
+            <rect x="192" y="192" width="640" height="640" fill="black" />
+            <rect x="256" y="256" width="512" height="512" fill="white" />
+            <rect x="320" y="320" width="384" height="384" fill="black" />
+            <rect x="384" y="384" width="256" height="256" fill="white" />
+            <rect x="448" y="448" width="128" height="128" fill="black" />
+        </mask>
+        
+        <g id="wface">
+            <rect x="0" y="0" width="1024" height="1024" fill="#000000" mask="url(#ringMask)" />
+        </g>
+        <g id="eface">
+            <rect x="0" y="0" width="1024" height="1024" fill="#000000" mask="url(#ringMask)" />
+        </g>
+        <g id="nface">
+            <rect x="0" y="0" width="1024" height="1024" fill="#000000" mask="url(#ringMask)" />
+        </g>
+    </defs>
+
+<use xlink:href="#eface" transform="matrix(0.494140625 -0.1162109375 0.0 0.5810546875 472.0 352.0)" />
+<use xlink:href="#wface" transform="matrix(0.4140625 0.2021484375 0.0 0.5810546875 48.0 145.0)" />
+<use xlink:href="#nface" transform="matrix(0.4140625 0.2021484375 -0.494140625 0.1162109375 554.0 26.0)" />
+
+</svg>
