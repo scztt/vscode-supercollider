@@ -20,11 +20,10 @@ export interface ActionSpec {
   colorOff?: string; // VSCode theme color when off (e.g., 'disabledForeground')
 }
 
-
 export type ControlSpec = NumericSpec | StringSpec | ActionSpec;
 
 export interface Control {
-  id: string;
+  path: string[]; // Path segments like ["audio", "oscillators", "freq"]
   friendlyName?: string;
   spec: ControlSpec;
   value: number | string | boolean; // boolean for action toggle state
@@ -35,11 +34,12 @@ export interface Control {
 export interface Category {
   id: string;
   friendlyName?: string;
-  controls: Control[];
+  children: Map<string, Category>; // Nested categories
+  controls: Control[]; // Controls directly in this category
 }
 
 export interface ControlPanelData {
-  categories: Category[];
+  controls: Control[]; // Flat list of all controls
 }
 
 // Tree item for the VSCode tree view
@@ -48,8 +48,7 @@ export class ControlItem extends vscode.TreeItem {
     public readonly label: string,
     public readonly collapsibleState: vscode.TreeItemCollapsibleState,
     public readonly itemType: 'category' | 'control',
-    public readonly categoryId?: string,
-    public readonly controlId?: string,
+    public readonly path?: string[], // Full path for both categories and controls
     public readonly control?: Control
   ) {
     super(label, collapsibleState);
@@ -96,64 +95,45 @@ export class ControlItem extends vscode.TreeItem {
 
       // Strip markdown for display in tree item
       const plainText = control.value
-        .replace(/\*\*(.*?)\*\*/g, '$1') // Bold
-        .replace(/\*(.*?)\*/g, '$1') // Italic
-        .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // Links
-        .replace(/`([^`]+)`/g, '$1') // Inline code
-        .replace(/\n+/g, ' '); // Newlines to spaces
+        .replace(/\*\*(.+?)\*\*/g, '$1')
+        .replace(/\*(.+?)\*/g, '$1')
+        .replace(/`(.+?)`/g, '$1')
+        .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+        .replace(/\n/g, ' ')
+        .trim();
 
-      // For strings, show first 30 chars
-      return plainText.length > 30 ? plainText.substring(0, 30) + '...' : plainText;
-    } else if (control.spec.type === 'action') {
-      const spec = control.spec;
-
-      if (spec.enabled === false) {
-        return 'disabled';
-      }
-
-      if (spec.toggleable) {
-        const isOn = control.value === true;
-        return isOn ? 'on' : 'off';
-      }
-
-      return 'click to trigger';
+      // Truncate if too long
+      return plainText.length > 50 ? plainText.substring(0, 47) + '...' : plainText;
     }
     return '';
   }
 
+  private getStringContentForLabel(content: string): string {
+    // Extract first line or meaningful content for label
+    const lines = content.split('\n');
+    let firstLine = lines[0] || '';
+
+    // Remove markdown formatting
+    firstLine = firstLine
+      .replace(/\*\*(.+?)\*\*/g, '$1')
+      .replace(/\*(.+?)\*/g, '$1')
+      .replace(/`(.+?)`/g, '$1')
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+      .replace(/#+\s*/, '')
+      .trim();
+
+    // Truncate if too long
+    return firstLine.length > 30 ? firstLine.substring(0, 27) + '...' : firstLine;
+  }
+
   private getActionIcon(control: Control): vscode.ThemeIcon {
     const spec = control.spec as ActionSpec;
-
-    if (spec.enabled === false) {
-      return new vscode.ThemeIcon('circle-slash', new vscode.ThemeColor('disabledForeground'));
+    if (spec.toggleable && control.value) {
+      return new vscode.ThemeIcon(spec.iconOn || 'circle-filled');
+    } else {
+      return new vscode.ThemeIcon(spec.iconOff || spec.iconOn || 'circle-outline');
     }
-
-    if (spec.toggleable) {
-      const isOn = control.value === true;
-      const iconName = isOn ? (spec.iconOn || 'check') : (spec.iconOff || 'circle-large-outline');
-      const colorName = isOn ? (spec.colorOn || 'terminal.ansiGreen') : (spec.colorOff || 'disabledForeground');
-      return new vscode.ThemeIcon(iconName, new vscode.ThemeColor(colorName));
-    }
-
-    // Non-toggleable action
-    const iconName = spec.iconOn || 'target';
-    const colorName = spec.colorOn || 'button.foreground';
-    return new vscode.ThemeIcon(iconName, new vscode.ThemeColor(colorName));
   }
-
-  private getStringContentForLabel(value: string): string {
-    // Strip markdown and get first line for label
-    const plainText = value
-      .replace(/\*\*(.*?)\*\*/g, '$1') // Bold
-      .replace(/\*(.*?)\*/g, '$1') // Italic
-      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // Links
-      .replace(/`([^`]+)`/g, '$1') // Inline code
-      .split('\n')[0]; // Take only first line
-
-    // Limit length for tree display
-    return plainText.length > 50 ? plainText.substring(0, 50) + '...' : plainText;
-  }
-
 }
 
 export class ControlPanelProvider implements vscode.TreeDataProvider<ControlItem> {
@@ -161,190 +141,114 @@ export class ControlPanelProvider implements vscode.TreeDataProvider<ControlItem
   readonly onDidChangeTreeData: vscode.Event<ControlItem | undefined | null | void> = this._onDidChangeTreeData.event;
 
   private data: ControlPanelData;
-  private values: Map<string, number | string | boolean> = new Map();
+  private values: Map<string, number | string | boolean> = new Map(); // Key is path.join('/')
+  private rootCategories: Map<string, Category> = new Map();
   private extensionUri: vscode.Uri;
 
   constructor(extensionUri: vscode.Uri) {
     this.extensionUri = extensionUri;
     // Initialize with example data
     this.data = this.createExampleData();
+    this.buildCategoryTree();
     this.initializeValues();
+  }
+
+  // Helper function to convert path to key
+  private pathToKey(path: string[]): string {
+    return path.join('/');
+  }
+
+  // Helper function to convert key back to path
+  private keyToPath(key: string): string[] {
+    return key.split('/');
+  }
+
+  // Build nested category tree from flat controls list
+  private buildCategoryTree() {
+    this.rootCategories.clear();
+
+    for (const control of this.data.controls) {
+      if (control.path.length === 0) continue;
+
+      let current = this.rootCategories;
+
+      // Navigate/create path up to the control (all but last segment)
+      for (let i = 0; i < control.path.length - 1; i++) {
+        const segment = control.path[i];
+
+        if (!current.has(segment)) {
+          current.set(segment, {
+            id: segment,
+            friendlyName: segment.toUpperCase(),
+            children: new Map(),
+            controls: []
+          });
+        }
+
+        current = current.get(segment)!.children;
+      }
+
+      // Controls are added directly to their parent category in getChildren()
+      // No need to create a category for the control itself
+    }
   }
 
   private createExampleData(): ControlPanelData {
     return {
-      categories: [
+      controls: [
         {
-          id: 'info',
-          friendlyName: 'Information',
-          controls: [
-            {
-              id: 'status',
-              friendlyName: 'System Status',
-              spec: {
-                type: 'string',
-                displayPropertyName: true
-              },
-              value: '**System Online**\n\nAll systems operational.'
-            },
-            {
-              id: 'notes',
-              friendlyName: 'Performance Notes',
-              spec: {
-                type: 'string',
-                displayPropertyName: true
-              },
-              value: 'CPU usage is *normal*.'
-            },
-            {
-              id: 'message',
-              spec: {
-                type: 'string',
-                displayPropertyName: false
-              },
-              value: '🎵 **Welcome to SuperCollider!**\n\nThis is a multi-line message that shows directly as content without a property name.'
-            },
-            {
-              id: 'help',
-              spec: {
-                type: 'string',
-                displayPropertyName: false
-              },
-              value: 'Press `Cmd+.` to stop all sounds'
-            }
-          ]
+          path: ['info', 'status'],
+          friendlyName: 'System Status',
+          spec: {
+            type: 'string',
+            displayPropertyName: true
+          },
+          value: '**System Online**\n\nAll systems operational.'
         },
         {
-          id: 'oscillators',
-          friendlyName: 'Oscillators',
-          controls: [
-            {
-              id: 'freq',
-              friendlyName: 'Frequency',
-              spec: {
-                type: 'numeric'
-              },
-              value: 440,
-              normalizedValue: 0.3,
-              displayValue: '440.00 Hz'
-            },
-            {
-              id: 'amp',
-              friendlyName: 'Amplitude',
-              spec: {
-                type: 'numeric'
-              },
-              value: 0.5,
-              normalizedValue: 0.5,
-              displayValue: '0.500'
-            }
-          ]
+          path: ['audio', 'oscillators', 'freq'],
+          friendlyName: 'Frequency',
+          spec: {
+            type: 'numeric'
+          },
+          value: 440,
+          normalizedValue: 0.3,
+          displayValue: '440.00 Hz'
         },
         {
-          id: 'filters',
-          friendlyName: 'Filters',
-          controls: [
-            {
-              id: 'cutoff',
-              friendlyName: 'Cutoff Frequency',
-              spec: {
-                type: 'numeric'
-              },
-              value: 1000,
-              normalizedValue: 0.7,
-              displayValue: '1000.0 Hz'
-            },
-            {
-              id: 'resonance',
-              friendlyName: 'Resonance',
-              spec: {
-                type: 'numeric'
-              },
-              value: 1.0,
-              normalizedValue: 0.09,
-              displayValue: '1.0'
-            }
-          ]
-        },
-        {
-          id: 'actions',
-          friendlyName: 'Actions',
-          controls: [
-            {
-              id: 'record',
-              friendlyName: 'Recording',
-              spec: {
-                type: 'action',
-                toggleable: true,
-                iconOn: 'record',
-                iconOff: 'circle-large-outline',
-                colorOn: 'terminal.ansiRed',
-                colorOff: 'disabledForeground'
-              },
-              value: false
-            },
-            {
-              id: 'mute',
-              friendlyName: 'Mute',
-              spec: {
-                type: 'action',
-                toggleable: true,
-                iconOn: 'mute',
-                iconOff: 'unmute',
-                colorOn: 'terminal.ansiYellow',
-                colorOff: 'terminal.ansiGreen'
-              },
-              value: false
-            },
-            {
-              id: 'panic',
-              friendlyName: 'Emergency Stop',
-              spec: {
-                type: 'action',
-                toggleable: false,
-                iconOn: 'stop-circle',
-                colorOn: 'terminal.ansiRed'
-              },
-              value: false
-            },
-            {
-              id: 'sync',
-              friendlyName: 'Sync Clock',
-              spec: {
-                type: 'action',
-                toggleable: false,
-                iconOn: 'sync',
-                colorOn: 'terminal.ansiBlue'
-              },
-              value: false
-            },
-            {
-              id: 'disabled_action',
-              friendlyName: 'Disabled Action',
-              spec: {
-                type: 'action',
-                enabled: false,
-                toggleable: true
-              },
-              value: false
-            }
-          ]
+          path: ['actions', 'record'],
+          friendlyName: 'Recording',
+          spec: {
+            type: 'action',
+            toggleable: true,
+            iconOn: 'record',
+            iconOff: 'circle-large-outline',
+            colorOn: 'terminal.ansiRed',
+            colorOff: 'disabledForeground'
+          },
+          value: false
         }
       ]
     };
   }
 
   private initializeValues() {
-    this.data.categories.forEach(category => {
-      category.controls.forEach(control => {
-        const key = `${category.id}.${control.id}`;
-        this.values.set(key, control.value);
-      });
-    });
+    for (const control of this.data.controls) {
+      const key = this.pathToKey(control.path);
+      this.values.set(key, control.value);
+    }
   }
 
   refresh(): void {
     this._onDidChangeTreeData.fire();
+  }
+
+  // Update the panel data from SuperCollider
+  updatePanelData(data: ControlPanelData) {
+    this.data = data;
+    this.buildCategoryTree();
+    this.initializeValues();
+    this.refresh();
   }
 
   getTreeItem(element: ControlItem): vscode.TreeItem {
@@ -353,63 +257,82 @@ export class ControlPanelProvider implements vscode.TreeDataProvider<ControlItem
 
   getChildren(element?: ControlItem): Thenable<ControlItem[]> {
     if (!element) {
-      // Return categories
-      return Promise.resolve(
-        this.data.categories.map(category =>
-          new ControlItem(
-            category.friendlyName || category.id,
-            vscode.TreeItemCollapsibleState.Expanded,
-            'category',
-            category.id
-          )
-        )
-      );
-    } else if (element.itemType === 'category' && element.categoryId) {
-      // Return controls for this category
-      const category = this.data.categories.find(c => c.id === element.categoryId);
-      if (category) {
-        return Promise.resolve(
-          category.controls.map(control => {
-            // Get current value from our values map
-            const key = `${category.id}.${control.id}`;
-            const currentValue = this.values.get(key) ?? control.value;
-            const controlWithValue = { ...control, value: currentValue };
+      // Return root categories
+      const items: ControlItem[] = [];
 
-            const controlItem = new ControlItem(
-              control.friendlyName || control.id,
-              vscode.TreeItemCollapsibleState.None,
-              'control',
-              category.id,
-              control.id,
-              controlWithValue
-            );
-
-            // Set custom slider icon for numeric controls
-            if (controlWithValue.spec.type === 'numeric') {
-              controlItem.iconPath = this.getSliderIconPath(controlWithValue);
-            }
-
-            return controlItem;
-          })
-        );
+      for (const [key, category] of this.rootCategories) {
+        items.push(new ControlItem(
+          category.friendlyName || category.id,
+          vscode.TreeItemCollapsibleState.Expanded,
+          'category',
+          [key]
+        ));
       }
+
+      return Promise.resolve(items);
+    } else if (element.itemType === 'category' && element.path) {
+      // Return children for this category path
+      let current = this.rootCategories;
+
+      // Navigate to the category
+      for (const segment of element.path) {
+        if (current.has(segment)) {
+          current = current.get(segment)!.children;
+        } else {
+          return Promise.resolve([]);
+        }
+      }
+
+      const items: ControlItem[] = [];
+
+      // Add subcategories
+      for (const [key, category] of current) {
+        items.push(new ControlItem(
+          category.friendlyName || category.id,
+          vscode.TreeItemCollapsibleState.Expanded,
+          'category',
+          [...element.path, key]
+        ));
+      }
+
+      // Add controls that match this path
+      for (const control of this.data.controls) {
+        if (control.path.length === element.path.length + 1 &&
+          control.path.slice(0, -1).join('/') === element.path.join('/')) {
+
+          // Get current value from our values map
+          const key = this.pathToKey(control.path);
+          const currentValue = this.values.get(key) ?? control.value;
+          const controlWithValue = { ...control, value: currentValue };
+
+          const controlItem = new ControlItem(
+            control.friendlyName || control.path[control.path.length - 1],
+            vscode.TreeItemCollapsibleState.None,
+            'control',
+            control.path,
+            controlWithValue
+          );
+
+          // Set custom slider icon for numeric controls
+          if (controlWithValue.spec.type === 'numeric') {
+            controlItem.iconPath = this.getSliderIconPath(controlWithValue);
+          }
+
+          items.push(controlItem);
+        }
+      }
+
+      return Promise.resolve(items);
     }
 
     return Promise.resolve([]);
   }
 
-  // Update the panel data from SuperCollider
-  updatePanelData(data: ControlPanelData) {
-    this.data = data;
-    this.initializeValues();
-    this.refresh();
-  }
-
   // Update a single value - for numeric controls, also update normalized/display values
-  updateValue(categoryId: string, controlId: string, displayValue: string, normalizedValue?: number) {
-    const key = `${categoryId}.${controlId}`;
+  updateValue(path: string[], displayValue: string, normalizedValue?: number) {
+    const key = this.pathToKey(path);
     const oldValue = this.values.get(key);
-    const control = this.getControl(categoryId, controlId);
+    const control = this.getControl(path);
 
     if (oldValue !== displayValue) {
       this.values.set(key, displayValue);
@@ -430,14 +353,14 @@ export class ControlPanelProvider implements vscode.TreeDataProvider<ControlItem
   }
 
   // Get current value
-  getValue(categoryId: string, controlId: string): number | string | boolean | undefined {
-    const key = `${categoryId}.${controlId}`;
+  getValue(path: string[]): number | string | boolean | undefined {
+    const key = this.pathToKey(path);
     return this.values.get(key);
   }
 
   // Handle value change from UI - expects normalized values for numeric controls
-  handleValueChange(categoryId: string, controlId: string, newValue: number | string | boolean, client?: any) {
-    const control = this.getControl(categoryId, controlId);
+  handleValueChange(path: string[], newValue: number | string | boolean, client?: any) {
+    const control = this.getControl(path);
 
     if (control && control.spec.type === 'numeric') {
       // For numeric controls, newValue should be normalized (0-1)
@@ -445,23 +368,22 @@ export class ControlPanelProvider implements vscode.TreeDataProvider<ControlItem
       control.normalizedValue = newValue as number;
     } else {
       // For string/action controls, update as before
-      // this.updateValue(categoryId, controlId, newValue);
+      // this.updateValue(path, newValue);
     }
 
     // Send notification to SuperCollider using new format
-    console.log(`ControlPanel: Sending value change to SuperCollider - ${categoryId}.${controlId} = ${newValue}`);
+    console.log(`ControlPanel: Sending value change to SuperCollider - ${this.pathToKey(path)} = ${newValue}`);
     if (client) {
       client.sendNotification('supercollider/controlPanelChange', {
-        category: categoryId,
-        id: controlId,
+        path: path,
         value: newValue
       });
     }
   }
 
   // Handle action trigger
-  handleActionTrigger(categoryId: string, controlId: string, client?: any) {
-    const control = this.getControl(categoryId, controlId);
+  handleActionTrigger(path: string[], client?: any) {
+    const control = this.getControl(path);
     if (control && control.spec.type === 'action') {
       const spec = control.spec;
 
@@ -471,16 +393,15 @@ export class ControlPanelProvider implements vscode.TreeDataProvider<ControlItem
 
       if (spec.toggleable) {
         // Toggle the state - use current value from values map
-        const currentValue = this.getValue(categoryId, controlId) ?? control.value;
+        const currentValue = this.getValue(path) ?? control.value;
         const newValue = !currentValue;
-        this.handleValueChange(categoryId, controlId, newValue, client);
+        this.handleValueChange(path, newValue, client);
       } else {
         // Send action trigger notification using new format
-        console.log(`ControlPanel: Triggering action - ${categoryId}.${controlId}`);
+        console.log(`ControlPanel: Triggering action - ${this.pathToKey(path)}`);
         if (client) {
           client.sendNotification('supercollider/controlPanelChange', {
-            category: categoryId,
-            id: controlId,
+            path: path,
             value: true // Actions send true when triggered
           });
         }
@@ -489,12 +410,9 @@ export class ControlPanelProvider implements vscode.TreeDataProvider<ControlItem
   }
 
   // Get control by path
-  getControl(categoryId: string, controlId: string): Control | undefined {
-    const category = this.data.categories.find(c => c.id === categoryId);
-    if (category) {
-      return category.controls.find(c => c.id === controlId);
-    }
-    return undefined;
+  getControl(path: string[]): Control | undefined {
+    const key = this.pathToKey(path);
+    return this.data.controls.find(c => this.pathToKey(c.path) === key);
   }
 
   // Get slider icon path based on normalized value
@@ -518,10 +436,8 @@ export class ControlDetailWebviewProvider implements vscode.WebviewViewProvider 
 
   private _view?: vscode.WebviewView;
   private _currentControl?: Control;
-  private _currentCategoryId?: string;
-  private _currentControlId?: string;
-  private _onValueChange?: (categoryId: string, controlId: string, value: number | string | boolean) => void;
-  private _isDragging = false;
+  private _currentPath?: string[];
+  private _onValueChange?: (path: string[], value: number | string | boolean) => void;
 
   constructor(private readonly _extensionContext: vscode.ExtensionContext) { }
 
@@ -541,28 +457,25 @@ export class ControlDetailWebviewProvider implements vscode.WebviewViewProvider 
     webviewView.webview.onDidReceiveMessage(message => {
       switch (message.command) {
         case 'valueChanged':
-          if (this._currentCategoryId && this._currentControlId && this._onValueChange) {
-            this._onValueChange(this._currentCategoryId, this._currentControlId, message.value);
+          if (this._currentPath && this._onValueChange) {
+            this._onValueChange(this._currentPath, message.value);
           }
           break;
         case 'actionTriggered':
-          if (this._currentCategoryId && this._currentControlId && this._onValueChange) {
+          if (this._currentPath && this._onValueChange) {
             // For toggleable actions, toggle the value
             if (this._currentControl && this._currentControl.spec.type === 'action' && this._currentControl.spec.toggleable) {
-              this._onValueChange(this._currentCategoryId, this._currentControlId, !this._currentControl.value);
+              this._onValueChange(this._currentPath, !this._currentControl.value);
             } else {
               // For non-toggleable actions, send a special trigger notification
-              // This could be handled differently if needed
-              console.log(`Action triggered: ${this._currentCategoryId}.${this._currentControlId}`);
+              console.log(`Action triggered: ${this._currentPath.join('/')}`);
             }
           }
           break;
         case 'dragStart':
-          this._isDragging = true;
           console.log('Drag started - blocking server updates');
           break;
         case 'dragEnd':
-          this._isDragging = false;
           console.log('Drag ended - re-enabling server updates');
           break;
       }
@@ -571,17 +484,16 @@ export class ControlDetailWebviewProvider implements vscode.WebviewViewProvider 
     this.updateWebview();
   }
 
-  public setValueChangeHandler(handler: (categoryId: string, controlId: string, value: number | string | boolean) => void) {
+  public setValueChangeHandler(handler: (path: string[], value: number | string | boolean) => void) {
     this._onValueChange = handler;
   }
 
-  public showControl(control: Control, categoryId: string, controlId: string) {
+  public showControl(control: Control, path: string[]) {
     this._currentControl = control;
-    this._currentCategoryId = categoryId;
-    this._currentControlId = controlId;
+    this._currentPath = path;
 
     if (this._view) {
-      this.updateWebview(control, categoryId, controlId);
+      this.updateWebview(control, path);
     }
   }
 
@@ -593,16 +505,7 @@ export class ControlDetailWebviewProvider implements vscode.WebviewViewProvider 
         this._currentControl.normalizedValue = normalizedValue;
       }
 
-      // Update the webview with new values (unless dragging)
-      // if (!this._isDragging) {
-      //   this.updateWebview(this._currentControl, this._currentCategoryId, this._currentControlId);
-      // } else {
-      //   // During drag, only update the display value in the webview
-      //   this._view?.webview.postMessage({
-      //     command: 'updateDisplayOnly',
-      //     displayValue: displayValue
-      //   });
-      // }
+      // Update the webview with new values
       this._view?.webview.postMessage({
         command: 'updateValue',
         displayValue: displayValue,
@@ -611,28 +514,35 @@ export class ControlDetailWebviewProvider implements vscode.WebviewViewProvider 
     } else if (this._currentControl) {
       // For non-numeric controls
       this._currentControl.value = displayValue;
-      this.updateWebview(this._currentControl, this._currentCategoryId, this._currentControlId);
+      this.updateWebview(this._currentControl, this._currentPath);
     }
   }
 
-  private updateWebview(control?: Control, categoryId?: string, controlId?: string) {
+  private updateWebview(control?: Control, path?: string[]) {
     if (!this._view) return;
 
     if (!control) {
-      this._view.webview.html = this.getWelcomeHtml();
+      this._view.webview.html = this.getEmptyHtml();
       return;
     }
 
-    if (control.spec.type === 'string') {
-      this._view.webview.html = this.getStringControlHtml(control);
-    } else if (control.spec.type === 'numeric') {
-      this._view.webview.html = this.getNumericControlHtml(control);
-    } else if (control.spec.type === 'action') {
-      this._view.webview.html = this.getActionControlHtml(control);
+    switch (control.spec.type) {
+      case 'numeric':
+        this._view.webview.html = this.getNumericControlHtml(control);
+        break;
+      case 'string':
+        this._view.webview.html = this.getStringControlHtml(control);
+        break;
+      case 'action':
+        this._view.webview.html = this.getActionControlHtml(control);
+        break;
+      default:
+        this._view.webview.html = this.getEmptyHtml();
+        break;
     }
   }
 
-  private getWelcomeHtml(): string {
+  private getEmptyHtml(): string {
     return `<!DOCTYPE html>
 <html>
 <head>
@@ -699,29 +609,13 @@ export class ControlDetailWebviewProvider implements vscode.WebviewViewProvider 
             color: var(--vscode-textLink-foreground);
         }
         .content {
-            font-size: 14px;
-        }
-        .content p {
-            margin: 10px 0;
-        }
-        .content p:first-child {
-            margin-top: 0;
-        }
-        .content p:last-child {
-            margin-bottom: 0;
+            margin-top: 15px;
         }
         .content code {
-            background-color: var(--vscode-textBlockQuote-background);
+            background-color: var(--vscode-textCodeBlock-background);
             padding: 2px 6px;
-            border-radius: 4px;
+            border-radius: 3px;
             font-family: var(--vscode-editor-font-family);
-            font-size: 13px;
-        }
-        .content strong {
-            font-weight: 600;
-        }
-        .content em {
-            font-style: italic;
         }
         .content a {
             color: var(--vscode-textLink-foreground);
@@ -733,7 +627,7 @@ export class ControlDetailWebviewProvider implements vscode.WebviewViewProvider 
     </style>
 </head>
 <body>
-    ${shouldShowName ? `<div class="control-name">${control.friendlyName || control.id}</div>` : ''}
+    ${shouldShowName ? `<div class="control-name">${control.friendlyName || control.path[control.path.length - 1]}</div>` : ''}
     <div class="content">${renderedHtml}</div>
 </body>
 </html>`;
@@ -804,41 +698,24 @@ export class ControlDetailWebviewProvider implements vscode.WebviewViewProvider 
             cursor: pointer;
             border: none;
         }
-        .spec-table {
-            width: 100%;
-            border-collapse: collapse;
+        .info {
             margin-top: 20px;
-        }
-        .spec-table td {
-            padding: 8px 12px;
-            border-bottom: 1px solid var(--vscode-input-border);
-        }
-        .spec-table td:first-child {
-            font-weight: 500;
-            color: var(--vscode-descriptionForeground);
-            width: 30%;
-        }
-        .range-labels {
-            display: flex;
-            justify-content: space-between;
+            padding: 10px;
+            background-color: var(--vscode-input-background);
+            border-radius: 4px;
             font-size: 12px;
             color: var(--vscode-descriptionForeground);
-            margin-top: 5px;
         }
     </style>
 </head>
 <body>
-    <div class="control-name">${control.friendlyName || control.id}</div>
+    <div class="control-name">${control.friendlyName || control.path[control.path.length - 1]}</div>
     <div class="current-value" id="valueDisplay">${displayValue}</div>
     
     <div class="slider-container">
         <input type="range" class="slider" id="slider" 
                min="0" max="1000" value="${normalizedValue * 1000}" 
                step="1">
-    </div>
-    
-    <div class="info">
-        Drag value or slider to adjust. Control uses normalized values (0-1).
     </div>
     
     <script>
@@ -874,7 +751,6 @@ export class ControlDetailWebviewProvider implements vscode.WebviewViewProvider 
         
         slider.addEventListener('input', (e) => {
             const normalized = parseInt(e.target.value) / 1000;
-            // currentNormalized = normalized;
             // Don't update display - wait for server to tell us new display value
             sendNormalizedValue(normalized);
         });
@@ -882,7 +758,6 @@ export class ControlDetailWebviewProvider implements vscode.WebviewViewProvider 
         // Draggable value display - with live updates
         let isDragging = false;
         let dragStartNormalized = 0; // Store original value when drag starts
-        let lastY = 0;
         let lastUpdateTime = 0;
         const THROTTLE_MS = 16; // ~60fps for live updates
         
@@ -900,7 +775,6 @@ export class ControlDetailWebviewProvider implements vscode.WebviewViewProvider 
             isDragging = true;
             dragStartNormalized = currentNormalized; // Remember start point
             dragStartY = e.clientY; // Remember start Y position
-            lastY = e.clientY;
             lastUpdateTime = 0; // Reset throttle
             e.preventDefault();
             document.body.style.cursor = 'ns-resize';
@@ -1006,12 +880,12 @@ export class ControlDetailWebviewProvider implements vscode.WebviewViewProvider 
             const message = event.data;
             if (message.command === 'updateValue') {
                 // Only update values if not dragging (either value drag or slider drag)
-                currentNormalized = message.normalizedValue;
-                
-                if (!isSliderDragging) {
+                if (!isDragging && !isSliderDragging) {
+                    currentNormalized = message.normalizedValue;
                     slider.value = currentNormalized * 1000;
                 }
                 
+                // Always update display value
                 updateDisplay(message.displayValue);
             } else if (message.command === 'updateDisplayOnly') {
                 // During drag: only update display value, don't change slider/normalized
@@ -1029,7 +903,7 @@ export class ControlDetailWebviewProvider implements vscode.WebviewViewProvider 
     const isOn = control.value === true;
     const isEnabled = spec.enabled !== false;
 
-    let buttonText = control.friendlyName || control.id;
+    let buttonText = control.friendlyName || control.path[control.path.length - 1];
     let buttonClass = 'btn-primary';
 
     if (!isEnabled) {
@@ -1067,26 +941,25 @@ export class ControlDetailWebviewProvider implements vscode.WebviewViewProvider 
             font-size: 16px;
             font-weight: 500;
             font-family: var(--vscode-font-family);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 10px;
-            transition: opacity 0.2s;
-        }
-        .action-button:hover:not(.btn-disabled) {
-            opacity: 0.9;
+            transition: all 0.2s ease;
         }
         .btn-primary {
             background-color: var(--vscode-button-background);
             color: var(--vscode-button-foreground);
         }
+        .btn-primary:hover {
+            background-color: var(--vscode-button-hoverBackground);
+        }
         .btn-success {
-            background-color: #28a745;
-            color: white;
+            background-color: var(--vscode-inputValidation-infoBackground);
+            color: var(--vscode-inputValidation-infoForeground);
         }
         .btn-secondary {
             background-color: var(--vscode-button-secondaryBackground);
             color: var(--vscode-button-secondaryForeground);
+        }
+        .btn-secondary:hover {
+            background-color: var(--vscode-button-secondaryHoverBackground);
         }
         .btn-disabled {
             background-color: var(--vscode-input-background);
@@ -1094,69 +967,40 @@ export class ControlDetailWebviewProvider implements vscode.WebviewViewProvider 
             cursor: not-allowed;
             opacity: 0.6;
         }
-        .button-icon {
-            font-size: 18px;
-        }
         .action-info {
-            margin-top: 20px;
-            padding: 15px;
+            margin-top: 15px;
+            padding: 10px;
             background-color: var(--vscode-input-background);
-            border-radius: 6px;
-            font-size: 14px;
-        }
-        .info-row {
-            display: flex;
-            justify-content: space-between;
-            margin: 5px 0;
-        }
-        .info-label {
-            font-weight: 500;
+            border-radius: 4px;
+            font-size: 12px;
             color: var(--vscode-descriptionForeground);
         }
     </style>
 </head>
 <body>
-    <div class="control-name">${control.friendlyName || control.id}</div>
+    <div class="control-name">${control.friendlyName || control.path[control.path.length - 1]}</div>
     
-    <button class="action-button ${buttonClass}" id="actionButton" ${!isEnabled ? 'disabled' : ''}>
+    <button class="action-button ${buttonClass}" 
+            ${isEnabled ? '' : 'disabled'} 
+            onclick="triggerAction()">
         ${buttonText}
     </button>
     
     <div class="action-info">
-        <div class="info-row">
-            <span class="info-label">Type:</span>
-            <span>${isToggleable ? 'Toggle Action' : 'Trigger Action'}</span>
-        </div>
-        <div class="info-row">
-            <span class="info-label">Status:</span>
-            <span>${isEnabled ? 'Enabled' : 'Disabled'}</span>
-        </div>
-        ${isToggleable ? `
-        <div class="info-row">
-            <span class="info-label">Current State:</span>
-            <span>${isOn ? 'ON' : 'OFF'}</span>
-        </div>
-        ` : ''}
+        ${isToggleable ? 'Toggleable action - click to switch state' : 'Single-trigger action'}
+        ${!isEnabled ? '<br><strong>This action is currently disabled</strong>' : ''}
     </div>
     
     <script>
         const vscode = acquireVsCodeApi();
-        const actionButton = document.getElementById('actionButton');
         
-        const isEnabled = ${isEnabled};
-        
-        if (isEnabled) {
-            actionButton.addEventListener('click', () => {
-                vscode.postMessage({
-                    command: 'actionTriggered'
-                });
-            });
+        function triggerAction() {
+            ${isEnabled ? 'vscode.postMessage({ command: "actionTriggered" });' : ''}
         }
     </script>
 </body>
 </html>`;
   }
-
 }
 
 export class ControlPanel {
@@ -1164,95 +1008,63 @@ export class ControlPanel {
   private treeView: vscode.TreeView<ControlItem>;
   private client: any | null = null;
   private detailView: ControlDetailWebviewProvider;
-  private currentSelectedCategory?: string;
-  private currentSelectedControl?: string;
+  private currentSelectedPath?: string[];
 
   constructor(context: vscode.ExtensionContext) {
     this.provider = new ControlPanelProvider(context.extensionUri);
     this.detailView = new ControlDetailWebviewProvider(context);
 
+    // Register the tree view
     this.treeView = vscode.window.createTreeView('supercolliderControls', {
       treeDataProvider: this.provider,
       showCollapseAll: true
     });
 
-    // Register the tree view
-    context.subscriptions.push(this.treeView);
-
     // Register the webview provider
     context.subscriptions.push(
-      vscode.window.registerWebviewViewProvider(
-        ControlDetailWebviewProvider.viewType,
-        this.detailView
-      )
+      vscode.window.registerWebviewViewProvider(ControlDetailWebviewProvider.viewType, this.detailView)
     );
 
-    // Connect value change handler
-    this.detailView.setValueChangeHandler((categoryId, controlId, value) => {
-      this.provider.handleValueChange(categoryId, controlId, value, this.client);
-      // Note: Detail view updates are now handled in updateValue method
+    // Set up value change handler
+    this.detailView.setValueChangeHandler((path: string[], value: number | string | boolean) => {
+      this.provider.handleValueChange(path, value, this.client);
     });
 
-    // Register command to edit control values
-    context.subscriptions.push(
-      vscode.commands.registerCommand('supercollider.editControl', async (item: ControlItem) => {
-        if (item.itemType === 'control' && item.categoryId && item.controlId && item.control) {
-          await this.editControlValue(item.categoryId, item.controlId, item.control);
-        }
-      })
-    );
-
-    // Make tree items clickable - show in detail view only
-    this.treeView.onDidChangeSelection(async e => {
-      if (e.selection.length > 0) {
-        const item = e.selection[0];
-        if (item.itemType === 'control' && item.categoryId && item.controlId && item.control) {
-          // Track current selection
-          this.currentSelectedCategory = item.categoryId;
-          this.currentSelectedControl = item.controlId;
-
-          // Show in detail view
-          this.detailView.showControl(item.control, item.categoryId, item.controlId);
-        }
-      } else {
-        // Clear selection tracking
-        this.currentSelectedCategory = undefined;
-        this.currentSelectedControl = undefined;
+    // Handle tree selection changes
+    this.treeView.onDidChangeSelection(e => {
+      const selectedItem = e.selection[0];
+      if (selectedItem && selectedItem.itemType === 'control' && selectedItem.control && selectedItem.path) {
+        this.currentSelectedPath = selectedItem.path;
+        this.detailView.showControl(selectedItem.control, selectedItem.path);
       }
     });
 
-    // Double-click to edit or trigger actions
-    context.subscriptions.push(
-      vscode.commands.registerCommand('supercollider.controls.doubleClick', async (item: ControlItem) => {
-        if (item.itemType === 'control' && item.categoryId && item.controlId && item.control) {
-          if (item.control.spec.type === 'action') {
-            // Trigger action on double-click
-            this.provider.handleActionTrigger(item.categoryId, item.controlId, this.client);
-          } else {
-            // Edit other control types
-            await this.editControlValue(item.categoryId, item.controlId, item.control);
-          }
+    // Handle double-click for editing
+    context.subscriptions.push(vscode.commands.registerCommand('supercollider.controls.doubleClick',
+      (item: ControlItem) => {
+        if (item.control && item.path) {
+          this.editControlValue(item.path, item.control);
         }
-      })
-    );
+      }));
 
-    // Inline action trigger button
-    context.subscriptions.push(
-      vscode.commands.registerCommand('supercollider.controls.triggerAction', (item: ControlItem) => {
-        if (item.itemType === 'control' && item.categoryId && item.controlId && item.control && item.control.spec.type === 'action') {
-          this.provider.handleActionTrigger(item.categoryId, item.controlId, this.client);
+    // Handle action trigger from tree view
+    context.subscriptions.push(vscode.commands.registerCommand('supercollider.controls.triggerAction',
+      (item: ControlItem) => {
+        if (item.control && item.path) {
+          this.provider.handleActionTrigger(item.path, this.client);
         }
-      })
-    );
+      }));
+
+    context.subscriptions.push(this.treeView);
   }
 
-  private async editControlValue(categoryId: string, controlId: string, control: Control) {
-    const currentValue = this.provider.getValue(categoryId, controlId) ?? control.value;
+  private async editControlValue(path: string[], control: Control) {
+    const currentValue = this.provider.getValue(path) ?? control.value;
 
     if (control.spec.type === 'numeric') {
       // For numeric controls, show a simple input for the display value
       const displayValue = control.displayValue || String(control.value);
-      const prompt = `${control.friendlyName || control.id} (current: ${displayValue})`;
+      const prompt = `${control.friendlyName || control.path[control.path.length - 1]} (current: ${displayValue})`;
 
       const input = await vscode.window.showInputBox({
         prompt: prompt,
@@ -1279,7 +1091,7 @@ export class ControlPanel {
       markdownString.isTrusted = true;
 
       await vscode.window.showInformationMessage(
-        `${control.friendlyName || control.id}`,
+        `${control.friendlyName || control.path[control.path.length - 1]}`,
         { modal: true, detail: currentValue as string }
       );
     }
@@ -1289,26 +1101,24 @@ export class ControlPanel {
     this.provider.updatePanelData(data);
 
     // If we had a control selected, try to re-select it after spec update
-    if (this.currentSelectedCategory && this.currentSelectedControl) {
-      const control = this.provider.getControl(this.currentSelectedCategory, this.currentSelectedControl);
+    if (this.currentSelectedPath) {
+      const control = this.provider.getControl(this.currentSelectedPath);
       if (control) {
         // Update the detail view with the new control data
-        this.detailView.showControl(control, this.currentSelectedCategory, this.currentSelectedControl);
-        console.log(`Re-connected detail view to ${this.currentSelectedCategory}.${this.currentSelectedControl} after spec update`);
+        this.detailView.showControl(control, this.currentSelectedPath);
       } else {
         // Control no longer exists, clear selection
-        this.currentSelectedCategory = undefined;
-        this.currentSelectedControl = undefined;
+        this.currentSelectedPath = undefined;
         console.log('Previously selected control no longer exists after spec update');
       }
     }
   }
 
-  updateValue(categoryId: string, controlId: string, displayValue: string, normalizedValue?: number) {
-    this.provider.updateValue(categoryId, controlId, displayValue, normalizedValue);
+  updateValue(path: string[], displayValue: string, normalizedValue?: number) {
+    this.provider.updateValue(path, displayValue, normalizedValue);
 
     // If this is the currently selected control, update the detail view
-    if (this.currentSelectedCategory === categoryId && this.currentSelectedControl === controlId) {
+    if (this.currentSelectedPath && this.currentSelectedPath.join('/') === path.join('/')) {
       this.detailView.updateControlValue(displayValue, normalizedValue);
     }
   }

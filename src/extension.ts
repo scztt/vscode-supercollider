@@ -91,7 +91,7 @@ export async function activate(context: vscode.ExtensionContext) {
             });
 
             supercolliderContext.client.onNotification('supercollider/controlPanelValue', (data) => {
-                controlPanel.updateValue(data.category, data.id, data.displayValue, data.normalizedValue);
+                controlPanel.updateValue(data.path, data.displayValue, data.normalizedValue);
             });
 
             // Legacy control panel notifications - keep for compatibility
@@ -100,7 +100,9 @@ export async function activate(context: vscode.ExtensionContext) {
             });
 
             supercolliderContext.client.onNotification('supercollider/controlValue', (data) => {
-                controlPanel.updateValue(data.categoryId, data.controlId, data.value);
+                // Legacy format - convert categoryId/controlId to path
+                const path = data.categoryId ? [data.categoryId, data.controlId] : [data.controlId];
+                controlPanel.updateValue(path, data.value);
             });
 
             // Set the client so the control panel can send notifications back
