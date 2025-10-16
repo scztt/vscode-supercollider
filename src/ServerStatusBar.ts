@@ -103,16 +103,17 @@ export class ServerStatusBar {
       name, icon, avgCPUFormatted, peakCPUFormatted, numUGens, numSynths, numGroups, numSynthDefs);
 
     const tooltipString = this.formatString(
-      "**Status**: " + (running ? "`running`" : "`stopped`") + "  \n" +
-      "---\n" +
-      "**Average CPU**: `${avgCPU}%`  \n" +
-      "**Peak CPU**: `${peakCPU}%`  \n" +
-      "---\n" +
-      "**Synths**: `${numSynths}`  \n" +
-      "**Groups**: `${numGroups}`  \n" +
-      "**UGens**: `${numUGens}`  \n" +
-      "---\n" +
-      "**SynthDefs**: `${numSynthDefs}`  \n",
+      "|  |  |\n" +
+      "|----------:|:-------|\n" +
+      "| **Status** | " + (running ? "🟢 `running`" : "⭕ `stopped`") + " |\n" +
+      "| **Average CPU** | `${avgCPU}%` |\n" +
+      "| **Peak CPU** | `${peakCPU}%` |\n" +
+      "| | |\n" +
+      "| **Synths** | `${numSynths}` |\n" +
+      "| **Groups** | `${numGroups}` |\n" +
+      "| **UGens** | `${numUGens}` |\n" +
+      "| | |\n" +
+      "| **SynthDefs** | `${numSynthDefs}` |\n",
       name, icon, avgCPUFormatted, peakCPUFormatted, numUGens, numSynths, numGroups, numSynthDefs);
 
     this.statusBarItem.text = statusString;
