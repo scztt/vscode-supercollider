@@ -249,6 +249,15 @@
                 "category": "SuperCollider"
             },
             {
+                "command": "supercollider.controls.doubleClick",
+                "title": "Edit"
+            },
+            {
+                "command": "supercollider.controls.triggerAction",
+                "title": "Trigger Action",
+                "icon": "$(target)"
+            },
+            {
                 "command": "supercollider.evaluateRegionByName",
                 "title": "Evaluate region by name in sclang",
                 "category": "SuperCollider"
@@ -308,6 +317,13 @@
                     "name": "Controls",
                     "icon": "$(symbol-number)",
                     "contextualTitle": "SuperCollider Controls"
+                },
+                {
+                    "id": "supercolliderControlDetail",
+                    "type": "webview",
+                    "name": "Control Detail",
+                    "icon": "$(preview)",
+                    "contextualTitle": "Control Detail View"
                 }
             ]
         },
@@ -325,7 +341,21 @@
                 "view": "supercolliderControls",
                 "contents": "No controls loaded.\n[Open SuperCollider File](command:supercollider.restart)"
             }
-        ]
+        ],
+        "menus": {
+            "view/item/context": [
+                {
+                    "command": "supercollider.controls.doubleClick",
+                    "when": "view == supercolliderControls && viewItem == control",
+                    "group": "inline"
+                },
+                {
+                    "command": "supercollider.controls.triggerAction",
+                    "when": "view == supercolliderControls && (viewItem == action-enabled)",
+                    "group": "inline"
+                }
+            ]
+        }
     },
     "dependencies": {
         "@vscode/windows-registry": "^1.1.0",
