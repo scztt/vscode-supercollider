@@ -315,7 +315,7 @@
                 {
                     "id": "supercolliderControls",
                     "name": "Controls",
-                    "icon": "$(symbol-number)",
+                    "icon": "images/sc_logo.svg",
                     "contextualTitle": "SuperCollider Controls"
                 },
                 {
