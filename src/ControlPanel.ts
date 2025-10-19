@@ -516,6 +516,7 @@ export class ControlDetailWebviewProvider implements vscode.WebviewViewProvider 
   private _view?: vscode.WebviewView;
   private _currentControl?: Control;
   private _currentPath?: string[];
+  private _selectedControls: Array<{ control: Control, path: string[] }> = [];
   private _onValueChange?: (path: string[], value: number | string | boolean) => void;
 
   constructor(private readonly _extensionContext: vscode.ExtensionContext) { }
@@ -536,8 +537,12 @@ export class ControlDetailWebviewProvider implements vscode.WebviewViewProvider 
     webviewView.webview.onDidReceiveMessage(message => {
       switch (message.command) {
         case 'valueChanged':
-          if (this._currentPath && this._onValueChange) {
-            this._onValueChange(this._currentPath, message.value);
+          if (this._onValueChange) {
+            // Use path from message if provided, otherwise fall back to current path
+            const pathToUse = message.path || this._currentPath;
+            if (pathToUse) {
+              this._onValueChange(pathToUse, message.value);
+            }
           }
           break;
         case 'actionTriggered':
@@ -570,9 +575,27 @@ export class ControlDetailWebviewProvider implements vscode.WebviewViewProvider 
   public showControl(control: Control, path: string[]) {
     this._currentControl = control;
     this._currentPath = path;
+    this._selectedControls = [{ control, path }];
 
     if (this._view) {
       this.updateWebview(control, path);
+    }
+  }
+
+  public showControls(controls: Array<{ control: Control, path: string[] }>) {
+    this._selectedControls = controls;
+
+    // For single selection, maintain backward compatibility
+    if (controls.length === 1) {
+      this._currentControl = controls[0].control;
+      this._currentPath = controls[0].path;
+    } else {
+      this._currentControl = undefined;
+      this._currentPath = undefined;
+    }
+
+    if (this._view) {
+      this.updateWebviewForMultiple();
     }
   }
 
@@ -594,6 +617,35 @@ export class ControlDetailWebviewProvider implements vscode.WebviewViewProvider 
       // For non-numeric controls
       this._currentControl.value = displayValue;
       this.updateWebview(this._currentControl, this._currentPath);
+    }
+  }
+
+  public updateControlValueByPath(path: string[], displayValue: string, normalizedValue?: number) {
+    // Find the control in our selected controls
+    const controlIndex = this._selectedControls.findIndex(c =>
+      c.path.join('/') === path.join('/')
+    );
+
+    if (controlIndex !== -1) {
+      const controlData = this._selectedControls[controlIndex];
+
+      // Update the control data
+      if (controlData.control.spec.type === 'numeric') {
+        controlData.control.displayValue = displayValue;
+        if (normalizedValue !== undefined) {
+          controlData.control.normalizedValue = normalizedValue;
+        }
+      } else {
+        controlData.control.value = displayValue;
+      }
+
+      // Send update message to webview
+      this._view?.webview.postMessage({
+        command: 'updateValue',
+        path: path,
+        displayValue: displayValue,
+        normalizedValue: normalizedValue,
+      });
     }
   }
 
@@ -619,6 +671,18 @@ export class ControlDetailWebviewProvider implements vscode.WebviewViewProvider 
         this._view.webview.html = this.getEmptyHtml();
         break;
     }
+  }
+
+  private updateWebviewForMultiple() {
+    if (!this._view) return;
+
+    if (this._selectedControls.length === 0) {
+      this._view.webview.html = this.getEmptyHtml();
+      return;
+    }
+
+    // Always use the new multi-control display (even for single selection)
+    this._view.webview.html = this.getMultipleControlsHtml(this._selectedControls);
   }
 
   private getEmptyHtml(): string {
@@ -679,7 +743,7 @@ export class ControlDetailWebviewProvider implements vscode.WebviewViewProvider 
             color: var(--vscode-foreground);
             background-color: var(--vscode-editor-background);
             line-height: 1.4;
-            overflow: hidden;
+            overflow: overlay;
         }
         
         /* Scale down for smaller panels */
@@ -840,6 +904,22 @@ export class ControlDetailWebviewProvider implements vscode.WebviewViewProvider 
             left: 0;
             cursor: ew-resize;
         }
+        .slider-value-overlay {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-weight: bold;
+            font-size: 14px;
+            color: var(--vscode-foreground);
+            pointer-events: none;
+            z-index: 3;
+            background-color: var(--vscode-editor-background);
+            padding: 2px 8px;
+            border-radius: 8px;
+            border: 1px solid var(--vscode-input-border);
+            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+        }
         .info {
             margin-top: 12px;
             padding: 8px;
@@ -860,6 +940,7 @@ export class ControlDetailWebviewProvider implements vscode.WebviewViewProvider 
                 <div class="slider-fill" id="sliderFill"></div>
             </div>
             <div class="slider-overlay" id="sliderOverlay"></div>
+            <div class="slider-value-overlay" id="sliderValueOverlay">${displayValue}</div>
         </div>
     </div>
     
@@ -868,6 +949,7 @@ export class ControlDetailWebviewProvider implements vscode.WebviewViewProvider 
         const sliderOverlay = document.getElementById('sliderOverlay');
         const sliderFill = document.getElementById('sliderFill');
         const valueDisplay = document.getElementById('valueDisplay');
+        const sliderValueOverlay = document.getElementById('sliderValueOverlay');
         
         let currentNormalized = ${normalizedValue};
         let currentDisplay = "${displayValue}";
@@ -883,6 +965,7 @@ export class ControlDetailWebviewProvider implements vscode.WebviewViewProvider 
         
         function updateDisplay(newDisplay) {
             valueDisplay.textContent = newDisplay;
+            sliderValueOverlay.textContent = newDisplay;
             currentDisplay = newDisplay;
         }
         
@@ -1013,29 +1096,7 @@ export class ControlDetailWebviewProvider implements vscode.WebviewViewProvider 
                 handleMouseUp();
             }
         });
-        
-        // Scroll wheel support for value display (vertical scroll)
-        valueDisplay.addEventListener('wheel', (e) => {
-            e.preventDefault();
-            
-            // Use deltaY for vertical scrolling
-            const delta = -e.deltaY; // Invert so scroll up = increase value
-            
-            // Sensitivity: smaller than mouse drag
-            const sensitivity = e.shiftKey ? 0.0002 : 0.001; // More precise with Shift
-            const normalizedDelta = delta * sensitivity;
-            
-            // Apply delta to current normalized value
-            const newNormalized = Math.max(0, Math.min(1, currentNormalized + normalizedDelta));
-            currentNormalized = newNormalized;
-            
-            // Update custom slider fill immediately
-            updateSliderFill(newNormalized);
-            
-            // Send update
-            sendNormalizedValue(newNormalized);
-        });
-        
+                
         // Scroll wheel support for slider (horizontal scroll if available)
         sliderOverlay.addEventListener('wheel', (e) => {
             e.preventDefault();
@@ -1105,6 +1166,398 @@ export class ControlDetailWebviewProvider implements vscode.WebviewViewProvider 
     return pathHtml;
   }
 
+  private getMultipleControlsHtml(controls: Array<{ control: Control, path: string[] }>): string {
+    let html = `<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body {
+            padding: 15px;
+            font-family: var(--vscode-font-family);
+            color: var(--vscode-foreground);
+            background-color: var(--vscode-editor-background);
+            overflow: hidden;
+        }
+        .multi-selection-header {
+            font-size: 16px;
+            font-weight: bold;
+            color: var(--vscode-textLink-foreground);
+            margin-bottom: 15px;
+            border-bottom: 1px solid var(--vscode-input-border);
+            padding-bottom: 8px;
+        }
+        .control-item {
+            margin-bottom: 4px;
+            padding: 4px;
+            background-color: var(--vscode-input-background);
+            border-radius: 4px;
+            border-left: 3px solid var(--vscode-button-background);
+        }
+        .control-path {
+            margin-bottom: 2px;
+            padding-bottom: 2px;
+            border-bottom: 1px solid var(--vscode-input-border);
+            font-size: 12px;
+            line-height: 1.2;
+            font-variant: small-caps;
+        }
+        .path-segment {
+            color: var(--vscode-foreground);
+        }
+        .path-separator {
+            color: var(--vscode-descriptionForeground);
+            margin: 0 4px;
+        }
+        .path-name {
+            font-weight: bold;
+            color: var(--vscode-textLink-foreground);
+        }
+        
+        /* Numeric control styles */
+        .numeric-control {
+            position: relative;
+        }
+        .slider-container {
+            position: relative;
+            height: 24px;
+            margin: 2px 0;
+        }
+        .slider-track {
+            width: 100%;
+            height: 100%;
+            background: var(--vscode-input-background);
+            border: 1px solid var(--vscode-input-border);
+            border-radius: 3px;
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+        .slider-fill {
+            height: 100%;
+            background: var(--vscode-button-background);
+            border-radius: 2px;
+        }
+        .slider-overlay {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            top: 0;
+            left: 0;
+            cursor: ew-resize;
+            z-index: 2;
+        }
+        .slider-value-overlay {
+            position: absolute;
+            top: 50%;
+            transform: translate(0%, -50%);
+            font-weight: bold;
+            font-size: 14px;
+            color: var(--vscode-button-foreground);
+            pointer-events: none;
+            z-index: 3;
+            padding: 2px 8px;
+            border-radius: 8px;
+        }
+        
+        /* String control styles */
+        .string-control .control-value {
+            padding: 8px;
+            background-color: var(--vscode-editor-background);
+            border-radius: 3px;
+            font-family: var(--vscode-editor-font-family);
+            max-height: 120px;
+            overflow-y: auto;
+            line-height: 1.4;
+        }
+        .string-control .control-value code {
+            background-color: var(--vscode-textCodeBlock-background);
+            padding: 2px 4px;
+            border-radius: 3px;
+            font-family: var(--vscode-editor-font-family);
+        }
+        .string-control .control-value a {
+            color: var(--vscode-textLink-foreground);
+            text-decoration: none;
+        }
+        .string-control .control-value a:hover {
+            text-decoration: underline;
+        }
+        .string-control .control-value p {
+            margin: 8px 0;
+        }
+        .string-control .control-value p:first-child {
+            margin-top: 0;
+        }
+        .string-control .control-value p:last-child {
+            margin-bottom: 0;
+        }
+        
+        /* Action control styles */
+        .action-control .action-button {
+            width: 100%;
+            padding: 8px 12px;
+            border: none;
+            border-radius: 4px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            background-color: var(--vscode-button-background);
+            color: var(--vscode-button-foreground);
+        }
+        .action-button.toggle-on {
+            background-color: var(--vscode-inputValidation-infoBackground);
+            color: var(--vscode-inputValidation-infoForeground);
+        }
+        
+        @media (max-height: 300px) {
+            body { padding: 6px; font-size: 13px; }
+            .control-item { padding: 4px; margin-bottom: 4px; }
+            .slider-container { height: 20px; }
+            .slider-value-overlay { font-size: 12px; }
+            .control-path { font-size: 10px; margin-bottom: 2px; padding-bottom: 2px; }
+        }
+        
+        @media (max-height: 160px) {
+            body { padding: 2px; font-size: 10px; }
+            .control-item { padding: 2px; margin-bottom: 2px; }
+            .slider-container { height: 16px; }
+            .slider-value-overlay { font-size: 10px; }
+            .control-path { font-size: 8px; margin-bottom: 1px; padding-bottom: 1px; }
+        }
+    </style>
+</head>
+<body>
+    `;
+
+    // Show all controls in order
+    for (const { control, path } of controls) {
+      // Format the path nicely
+      const pathSegments = path.slice(); // Copy the path
+      const name = pathSegments.pop(); // Remove and get the last segment (the name)
+
+      let pathHtml = '<div class="control-path">';
+
+      // Add parent segments
+      if (pathSegments.length > 0) {
+        pathHtml += pathSegments.map(segment => `<span class="path-segment">${segment}</span>`).join('<span class="path-separator">/</span>');
+        pathHtml += '<span class="path-separator">/</span>';
+      }
+
+      // Add the name (bold and blue)
+      pathHtml += `<span class="path-name">${control.displayName || name}</span>`;
+      pathHtml += '</div>';
+
+      html += `<div class="control-item">
+        ${pathHtml}`;
+
+      if (control.spec.type === 'numeric') {
+        const displayValue = control.displayValue || String(control.value);
+        const normalizedValue = control.normalizedValue || 0;
+        const fillPercentage = Math.max(0, Math.min(100, normalizedValue * 100));
+        const pathStr = path.join('/');
+
+        html += `<div class="numeric-control">
+          <div class="slider-container">
+            <div class="slider-track">
+              <div class="slider-fill" id="slider-fill-${pathStr.replace(/[^a-zA-Z0-9]/g, '_')}" style="width: ${fillPercentage}%"></div>
+            </div>
+            <div class="slider-overlay" data-path="${pathStr}" data-current="${normalizedValue}"></div>
+            <div class="slider-value-overlay" id="value-${pathStr.replace(/[^a-zA-Z0-9]/g, '_')}">${displayValue}</div>
+          </div>
+        </div>`;
+
+      } else if (control.spec.type === 'string') {
+        const value = String(control.value);
+        // Convert markdown to HTML
+        const renderedHtml = value
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+          .replace(/\*(.+?)\*/g, '<em>$1</em>')
+          .replace(/`(.+?)`/g, '<code>$1</code>')
+          .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>')
+          .replace(/\n\n/g, '</p><p>')
+          .replace(/\n/g, '<br>');
+
+        // Wrap in paragraphs if we have multiple lines
+        const finalHtml = renderedHtml.includes('</p><p>') ? '<p>' + renderedHtml + '</p>' : renderedHtml;
+
+        html += `<div class="string-control">
+          <div class="control-value">${finalHtml}</div>
+        </div>`;
+
+      } else if (control.spec.type === 'action') {
+        const spec = control.spec as ActionSpec;
+        const isOn = control.value === true;
+        const buttonText = spec.toggleable ? (isOn ? 'ON' : 'OFF') : 'Trigger';
+        const buttonClass = spec.toggleable && isOn ? 'toggle-on' : '';
+
+        html += `<div class="action-control">
+          <button class="action-button ${buttonClass}">${buttonText}</button>
+        </div>`;
+      }
+
+      html += `</div>`;
+    }
+
+    html += `
+    <script>
+        const vscode = acquireVsCodeApi();
+        
+        // Single drag state
+        let isDragging = false;
+        let dragStartNormalized = 0;
+        let dragStartX = 0;
+        let dragPath = null;
+        
+        function sendNormalizedValue(path, normalized) {
+            console.log('Sending value to server:', path, normalized);
+            vscode.postMessage({
+                command: 'valueChanged',
+                path: path.split('/'),
+                value: normalized
+            });
+        }
+        
+        // Single mouse move handler
+        function handleMouseMove(e) {
+            if (!isDragging || !dragPath) {
+                console.log('Mouse move but not dragging:', isDragging, dragPath);
+                return;
+            }
+            
+            console.log('Mouse move during drag, deltaX:', e.clientX - dragStartX);
+            
+            const overlay = document.querySelector(\`[data-path="\${dragPath}"]\`);
+            if (!overlay) {
+                console.log('No overlay found for path:', dragPath);
+                return;
+            }
+            
+            // Calculate movement from drag start
+            const deltaX = e.clientX - dragStartX;
+            const rect = overlay.getBoundingClientRect();
+            const deltaNormalized = deltaX / rect.width;
+            
+            // Apply delta to the original start value
+            const newNormalized = Math.max(0, Math.min(1, dragStartNormalized + deltaNormalized));
+            
+            console.log('Sending normalized value:', newNormalized);
+            
+            // Send to server - let server update the display
+            sendNormalizedValue(dragPath, newNormalized);
+        }
+        
+        // Single mouse up handler
+        function handleMouseUp() {
+            if (isDragging) {
+                console.log('Mouse up, ending drag for:', dragPath);
+                isDragging = false;
+                document.body.style.cursor = 'default';
+                document.body.style.userSelect = '';
+                dragPath = null;
+            }
+        }
+        
+        // Attach event listeners to all slider overlays
+        document.querySelectorAll('.slider-overlay').forEach(overlay => {
+            const path = overlay.getAttribute('data-path');
+            
+            overlay.addEventListener('mousedown', (e) => {
+                console.log('Mouse down on slider:', path);
+                
+                // Stop any existing drag first
+                if (isDragging) {
+                    console.log('Stopping existing drag');
+                    handleMouseUp();
+                }
+                
+                isDragging = true;
+                dragPath = path;
+                
+                // Get current normalized value from server data
+                dragStartNormalized = parseFloat(overlay.getAttribute('data-current')) || 0;
+                dragStartX = e.clientX;
+                
+                console.log('Starting drag:', path, 'startValue:', dragStartNormalized);
+                
+                e.preventDefault();
+                e.stopPropagation();
+                document.body.style.cursor = 'ew-resize';
+                
+                // Ensure we capture mouse events
+                document.body.style.userSelect = 'none';
+            });
+            
+            // Handle scroll wheel
+            overlay.addEventListener('wheel', (e) => {
+                e.preventDefault();
+                
+                const delta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? -e.deltaX : -e.deltaY;
+                const sensitivity = e.shiftKey ? 0.0002 : 0.001;
+                const normalizedDelta = delta * sensitivity;
+                
+                // Get current value and apply delta
+                const currentNormalized = parseFloat(overlay.getAttribute('data-current')) || 0;
+                const newNormalized = Math.max(0, Math.min(1, currentNormalized + normalizedDelta));
+                
+                // Send to server
+                sendNormalizedValue(path, newNormalized);
+            });
+        });
+        
+        // Single set of document event listeners
+        document.addEventListener('mousemove', handleMouseMove);
+        document.addEventListener('mouseup', handleMouseUp);
+        
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && isDragging) {
+                handleMouseUp();
+            }
+        });
+        
+        // Debug logging
+        console.log('Slider setup complete. Found', document.querySelectorAll('.slider-overlay').length, 'sliders');
+        
+        // Listen for updates from server
+        window.addEventListener('message', event => {
+            const message = event.data;
+            if (message.command === 'updateValue') {
+                const pathStr = message.path.join('/');
+                const sliderId = pathStr.replace(/[^a-zA-Z0-9]/g, '_');
+                
+                // Update slider fill
+                if (message.normalizedValue !== undefined) {
+                    const fillElement = document.getElementById('slider-fill-' + sliderId);
+                    if (fillElement) {
+                        const percentage = Math.max(0, Math.min(100, message.normalizedValue * 100));
+                        fillElement.style.width = percentage + '%';
+                    }
+                    
+                    // Update data attribute for next drag
+                    const overlay = document.querySelector(\`[data-path="\${pathStr}"]\`);
+                    if (overlay) {
+                        overlay.setAttribute('data-current', message.normalizedValue);
+                    }
+                }
+                
+                // Update display value
+                if (message.displayValue !== undefined) {
+                    const valueElement = document.getElementById('value-' + sliderId);
+                    if (valueElement) {
+                        valueElement.textContent = message.displayValue;
+                    }
+                }
+            }
+        });
+    </script>
+</body>
+</html>`;
+
+    return html;
+  }
+
   private getActionControlHtml(control: Control): string {
     const spec = control.spec as ActionSpec;
     const isToggleable = spec.toggleable || false;
@@ -1131,7 +1584,7 @@ export class ControlDetailWebviewProvider implements vscode.WebviewViewProvider 
             font-family: var(--vscode-font-family);
             color: var(--vscode-foreground);
             background-color: var(--vscode-editor-background);
-            overflow: hidden;
+            overflow: overlay;
         }
         
         /* Scale down for smaller panels */
@@ -1249,10 +1702,11 @@ export class ControlPanel {
     this.provider = new ControlPanelProvider(context.extensionUri);
     this.detailView = new ControlDetailWebviewProvider(context);
 
-    // Register the tree view
+    // Register the tree view with multi-select enabled
     this.treeView = vscode.window.createTreeView('supercolliderControls', {
       treeDataProvider: this.provider,
-      showCollapseAll: true
+      showCollapseAll: true,
+      canSelectMany: true
     });
 
     // Register the webview provider
@@ -1265,12 +1719,24 @@ export class ControlPanel {
       this.provider.handleValueChange(path, value, this.client);
     });
 
-    // Handle tree selection changes
+    // Handle tree selection changes (multi-select)
     this.treeView.onDidChangeSelection(e => {
-      const selectedItem = e.selection[0];
-      if (selectedItem && selectedItem.itemType === 'control' && selectedItem.control && selectedItem.path) {
-        this.currentSelectedPath = selectedItem.path;
-        this.detailView.showControl(selectedItem.control, selectedItem.path);
+      const selectedControls = e.selection
+        .filter(item => item.itemType === 'control' && item.control && item.path)
+        .map(item => ({ control: item.control!, path: item.path! }));
+
+      if (selectedControls.length > 0) {
+        // For single selection, track the path for updates
+        if (selectedControls.length === 1) {
+          this.currentSelectedPath = selectedControls[0].path;
+        } else {
+          this.currentSelectedPath = undefined; // No single path for multi-select
+        }
+
+        this.detailView.showControls(selectedControls);
+      } else {
+        this.currentSelectedPath = undefined;
+        this.detailView.showControls([]);
       }
     });
 
@@ -1359,7 +1825,10 @@ export class ControlPanel {
   updateValue(path: string[], displayValue: string, normalizedValue?: number) {
     this.provider.updateValue(path, displayValue, normalizedValue);
 
-    // If this is the currently selected control, update the detail view
+    // Update the detail view for any selected controls
+    this.detailView.updateControlValueByPath(path, displayValue, normalizedValue);
+
+    // Keep legacy single-control update for backward compatibility
     if (this.currentSelectedPath && this.currentSelectedPath.join('/') === path.join('/')) {
       this.detailView.updateControlValue(displayValue, normalizedValue);
     }
