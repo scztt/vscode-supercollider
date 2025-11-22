@@ -454,36 +454,40 @@ export class SuperColliderContext implements Disposable, EvaluationDelegate, Com
             }
         });
 
-        this.subscriptions.push(
-            await onLiveshareSession((role, id) => {
-                const enabled = workspace.getConfiguration().get<boolean>('supercollider.enableLiveShareCoop', false);
+        try {
+            this.subscriptions.push(
+                await onLiveshareSession((role, id) => {
+                    const enabled = workspace.getConfiguration().get<boolean>('supercollider.enableLiveShareCoop', false);
 
-                if (enabled && role != Role.None) {
-                    const options = ['Yes', 'No'];
+                    if (enabled && role != Role.None) {
+                        const options = ['Yes', 'No'];
 
-                    const description = role === Role.Host
-                        ? 'You are hosting a LiveShare session. Do you want to use co-op mode? THIS MEANS REMOTE USERS CAN EXECUTE CODE ON YOUR MACHINE.'
-                        : 'You are joining a LiveShare session. Do you want to use co-op mode? This means you will be executing code on the host machine.';
+                        const description = role === Role.Host
+                            ? 'You are hosting a LiveShare session. Do you want to use co-op mode? THIS MEANS REMOTE USERS CAN EXECUTE CODE ON YOUR MACHINE.'
+                            : 'You are joining a LiveShare session. Do you want to use co-op mode? This means you will be executing code on the host machine.';
 
-                    vscode.window.showQuickPick(options, {
-                        placeHolder: description,
-                        canPickMany: false,
-                        ignoreFocusOut: false
-                    }).then((result) => {
-                        if (result == 'Yes') {
-                            role = Role.Host;
-                            currentCoopSession = id;
-                        };
+                        vscode.window.showQuickPick(options, {
+                            placeHolder: description,
+                            canPickMany: false,
+                            ignoreFocusOut: false
+                        }).then((result) => {
+                            if (result == 'Yes') {
+                                role = Role.Host;
+                                currentCoopSession = id;
+                            };
+                            liveshareSessionRole = role;
+                            currentLiveShareSession = id;
+                            updateLiveshareSession();
+                        });
+                    } else {
                         liveshareSessionRole = role;
                         currentLiveShareSession = id;
-                        updateLiveshareSession();
-                    });
-                } else {
-                    liveshareSessionRole = role;
-                    currentLiveShareSession = id;
-                }
-            })
-        );
+                    }
+                })
+            );
+        } catch (error) {
+            console.warn('Failed to initialize LiveShare session handler:', error);
+        }
 
         this.activated = true;
     }
