@@ -53,6 +53,10 @@
       "match": "\\b(arg|var|classvar|const|this|thisThread|thisMethod|thisFunction|thisProcess|currentEnvironment|true|false|inf|nil)\\b"
     },
     {
+      "name": "constant.character.supercollider",
+      "match": "\\$\\S"
+    },
+    {
       "name": "keyword.operator.supercollider",
       "match": "\\b(\\*|\/|\\\\|\\+|\\-|<|>|\\||@|\\?|\\!)+\\b"
     },
