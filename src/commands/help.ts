@@ -46,7 +46,7 @@ async function getHtmlFromFile(path: string) {
     });
 }
 
-function makeHTML(path: string) {
+function makeHTML(path: string, port: number) {
     var result = `
         <!DOCTYPE html>
         <meta charset="UTF-8">
@@ -66,7 +66,7 @@ function makeHTML(path: string) {
             border: 0px;
         }
         </style> 
-        <iframe id="frame" src="http://127.0.0.1:8080/${path}" width="100%" height="100%"></iframe>
+        <iframe id="frame" src="http://127.0.0.1:${port}/${path}" width="100%" height="100%"></iframe>
 
         <script>
             //# sourceURL=help.js
@@ -82,7 +82,7 @@ function makeHTML(path: string) {
                 }
                 window.addEventListener('message', (event) => {
                     // Check the origin of the message to ensure it's from a trusted source
-                    if (event.origin == 'http://127.0.0.1:8080') {
+                    if (event.origin == 'http://127.0.0.1:${port}') {
                         if (event.data.command == 'open-local-file') {
                         vscode.postMessage(event.data)
                         } else if (event.data.command == 'keyboard-rebroadcast') {
@@ -116,6 +116,7 @@ function makeHTML(path: string) {
 }
 
 let server = null
+let serverPort: number | null = null
 let frontend_js: string | undefined;
 let frontend_css: string | undefined;
 
@@ -134,7 +135,7 @@ async function searchHelpInActiveDocument(client: vscodelc.LanguageClient) {
             searchString: searchString,
         });
 
-        launchServer(result.rootUri)
+        await launchServer(result.rootUri)
 
         let helpPath = result.uri.replace(result.rootUri, '');
 
@@ -147,7 +148,7 @@ async function searchHelpInActiveDocument(client: vscodelc.LanguageClient) {
                 retainContextWhenHidden: true,
                 enableScripts: true
             });
-        helpPanel.webview.html = makeHTML(helpPath);
+        helpPanel.webview.html = makeHTML(helpPath, serverPort!);
         helpPanel.webview.onDidReceiveMessage(
             (message) => {
                 switch (message.command) {
@@ -165,8 +166,8 @@ export function activate(context: SuperColliderContext) {
     context.subscriptions.push(
         vscode.commands.registerCommand(
             'supercollider.searchHelp',
-            () => {
-                searchHelpInActiveDocument(context.client)
+            async () => {
+                await searchHelpInActiveDocument(context.client)
             }));
 }
 
@@ -174,6 +175,7 @@ export function deactivate(context: SuperColliderContext) {
     if (!!server) {
         server.close();
         server = null;
+        serverPort = null;
     }
 }
 
@@ -209,73 +211,103 @@ function readFrontendFiles() {
     });
 }
 
-async function launchServer(rootUri) {
+async function launchServer(rootUri): Promise<void> {
     if (!server) {
-        server = http.createServer(async function (request, response) {
-            console.log('request starting...');
+        return new Promise((resolve, reject) => {
+            try {
+                server = http.createServer(async function (request, response) {
+                    console.log('request starting...');
 
-            const [frontend_css, frontend_js] = await readFrontendFiles();
+                    try {
+                        const [frontend_css, frontend_js] = await readFrontendFiles();
 
-            if (request.url == '//frontend.css') {
-                // custom style
-                response.writeHead(200, { 'Content-Type': 'text/css' });
-                response.end(frontend_css, 'utf-8');
-            }
+                        if (request.url == '//frontend.css') {
+                            // custom style
+                            response.writeHead(200, { 'Content-Type': 'text/css' });
+                            response.end(frontend_css, 'utf-8');
+                        }
 
-            if (request.url == '//frontend.js') {
-                // custom style
-                response.writeHead(200, { 'Content-Type': 'text/javascript' });
-                response.end(frontend_js, 'utf-8');
-            }
+                        if (request.url == '//frontend.js') {
+                            // custom style
+                            response.writeHead(200, { 'Content-Type': 'text/javascript' });
+                            response.end(frontend_js, 'utf-8');
+                        }
 
-            var filePath = url.fileURLToPath(rootUri + request.url);
-            if (filePath == './') {
-                filePath = './index.html';
-            }
+                        var filePath = url.fileURLToPath(rootUri + request.url);
+                        if (filePath == './') {
+                            filePath = './index.html';
+                        }
 
-            var extname = path.extname(filePath);
-            var contentType = 'text/html';
-            switch (extname) {
-                case '.js':
-                    contentType = 'text/javascript';
-                    break;
-                case '.css':
-                    contentType = 'text/css';
-                    break;
-                case '.json':
-                    contentType = 'application/json';
-                    break;
-                case '.png':
-                    contentType = 'image/png';
-                    break;
-                case '.jpg':
-                    contentType = 'image/jpg';
-                    break;
-                case '.wav':
-                    contentType = 'audio/wav';
-                    break;
-            }
+                        var extname = path.extname(filePath);
+                        var contentType = 'text/html';
+                        switch (extname) {
+                            case '.js':
+                                contentType = 'text/javascript';
+                                break;
+                            case '.css':
+                                contentType = 'text/css';
+                                break;
+                            case '.json':
+                                contentType = 'application/json';
+                                break;
+                            case '.png':
+                                contentType = 'image/png';
+                                break;
+                            case '.jpg':
+                                contentType = 'image/jpg';
+                                break;
+                            case '.wav':
+                                contentType = 'audio/wav';
+                                break;
+                        }
 
-            fs.readFile(filePath, function (error, content) {
-                if (error) {
-                    if (error.code == 'ENOENT') {
-                        fs.readFile('./404.html', function (error, content) {
-                            response.writeHead(200, { 'Content-Type': contentType });
-                            response.end(content, 'utf-8');
+                        fs.readFile(filePath, function (error, content) {
+                            if (error) {
+                                if (error.code == 'ENOENT') {
+                                    fs.readFile('./404.html', function (error, content) {
+                                        response.writeHead(200, { 'Content-Type': contentType });
+                                        response.end(content, 'utf-8');
+                                    });
+                                }
+                                else {
+                                    response.writeHead(500);
+                                    response.end('Sorry, check with the site admin for error: ' + error.code + ' ..\n');
+                                    response.end();
+                                }
+                            }
+                            else {
+                                response.writeHead(200, { 'Content-Type': contentType });
+                                response.end(content, 'utf-8');
+                            }
                         });
-                    }
-                    else {
+                    } catch (requestError) {
+                        console.error('Error handling request:', requestError);
                         response.writeHead(500);
-                        response.end('Sorry, check with the site admin for error: ' + error.code + ' ..\n');
-                        response.end();
+                        response.end('Internal server error');
                     }
-                }
-                else {
-                    response.writeHead(200, { 'Content-Type': contentType });
-                    response.end(content, 'utf-8');
-                }
-            });
-        })
-            .listen(8080);
+                });
+
+                server.on('error', (error: Error) => {
+                    console.error('Help server error:', error);
+                    vscode.window.showErrorMessage(`Failed to start help server: ${error.message}`);
+                    server = null;
+                    serverPort = null;
+                    reject(error);
+                });
+
+                const port = Math.floor(Math.random() * 55536) + 10000;
+                serverPort = port;
+                server.listen(port, () => {
+                    console.log(`Help server started on port ${port}`);
+                    resolve();
+                });
+            } catch (error) {
+                console.error('Failed to create help server:', error);
+                vscode.window.showErrorMessage(`Failed to start help server: ${(error as Error).message}`);
+                server = null;
+                serverPort = null;
+                reject(error);
+            }
+        });
     }
 }
