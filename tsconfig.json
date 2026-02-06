@@ -8,6 +8,7 @@
 		],
 		"diagnostics": true,
 		"sourceMap": true,
+		"skipLibCheck": true,
 		"rootDir": "src",
 		// "strict": true   /* enable all strict type-checking options */
 		/* Additional Checks */

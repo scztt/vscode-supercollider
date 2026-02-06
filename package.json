@@ -114,6 +114,16 @@
                         "type": "boolean",
                         "default": false,
                         "description": "Enable LiveShare Coop support for SuperCollider. This will allow LiveShare guests to both edit and execute code on the hosts machine. **NOTE: This feature must be enabled per LiveShare session. Since this allows guests to execute arbitrary code on your machine, only invite users you trust.**"
+                    },
+                    "supercollider.mcp.enabled": {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Enable the MCP (Model Context Protocol) server, allowing Claude and other MCP clients to evaluate SuperCollider code and control the audio server."
+                    },
+                    "supercollider.mcp.port": {
+                        "type": "number",
+                        "default": 22123,
+                        "description": "Port for the MCP server (requires restart after changing)."
                     }
                 }
             }
@@ -358,9 +368,13 @@
         }
     },
     "dependencies": {
+        "@types/marked": "^5.0.2",
         "@vscode/windows-registry": "^1.1.0",
+        "fastmcp": "^3.31.0",
+        "marked": "^16.4.1",
         "vscode-languageclient": "^8.1.0",
-        "vsls": "^1.0.4753"
+        "vsls": "^1.0.4753",
+        "zod": "^4.3.6"
     },
     "devDependencies": {
         "@types/mocha": "^2.2.42",
@@ -369,6 +383,6 @@
         "copyfiles": "^2.4.1",
         "eslint": "^4.11.0",
         "tar": "^6.1.11",
-        "typescript": "^4.4.3"
+        "typescript": "^5.9.3"
     }
 }

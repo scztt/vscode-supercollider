@@ -12,6 +12,7 @@ import { getSclangPath } from './util/sclang';
 import { ServerStatusBar } from './ServerStatusBar';
 import { ControlPanel } from './ControlPanel';
 import { SuperColliderFormatter } from './providers/FormattingProvider';
+import { SuperColliderMcpServer } from './mcp/server';
 
 export const internalCommands = [
     'supercollider.internal.bootServer',
@@ -69,6 +70,8 @@ export async function activate(context: vscode.ExtensionContext) {
         vscode.languages.registerDocumentFormattingEditProvider({ language: 'supercollider' }, formatter);
     }
 
+    let mcpServer: SuperColliderMcpServer | null = null;
+
     const doActivate = async () => {
         try {
             if (!supercolliderContext) {
@@ -79,6 +82,19 @@ export async function activate(context: vscode.ExtensionContext) {
 
             await supercolliderContext.activate(outputChannel, context.globalState);
             await supercolliderContext.startClient();
+
+            // Start MCP server if enabled
+            const mcpEnabled = workspace.getConfiguration().get<boolean>('supercollider.mcp.enabled', false);
+            if (mcpEnabled) {
+                const mcpPort = workspace.getConfiguration().get<number>('supercollider.mcp.port', 22123);
+                try {
+                    mcpServer = new SuperColliderMcpServer(supercolliderContext);
+                    await mcpServer.start(mcpPort);
+                    outputChannel.appendLine(`MCP server started on port ${mcpPort}`);
+                } catch (err) {
+                    outputChannel.appendLine(`Failed to start MCP server: ${err}`);
+                }
+            }
 
             help.activate(supercolliderContext);
             supercolliderContext.client.onNotification('supercollider/serverStatus', (data) => {

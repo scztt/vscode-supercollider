@@ -127,6 +127,74 @@ function currentDocumentLine() {
     return range;
 }
 
+// Find a parenthesis-delimited region around a given line index (0-indexed).
+// Works on an array of line strings. Returns { start, end } line indices or null.
+export function findRegion(lines: string[], lineIndex: number): { start: number, end: number } | null {
+    const startRE = /^\(\s*(\/\/)?\s*(.*)\s*$/;
+
+    // Search backward for opening paren line
+    let start = lineIndex;
+    while (start >= 0 && !startRE.test(lines[start])) {
+        start--;
+    }
+    if (start < 0) return null;
+
+    // Track paren depth forward from the start line
+    let parenDepth = 0;
+    let inComment = false;
+    let inLineComment = false;
+    let inString = false;
+    let inSymbol = false;
+    let end = start;
+
+    while (end < lines.length) {
+        let lastCh;
+        for (const ch of lines[end]) {
+            const parsing = !inComment && !inLineComment && !inString && !inSymbol;
+
+            if (!inComment && !inLineComment && !inSymbol && ch == "\"") {
+                inString = !inString;
+            }
+            else if (!inComment && !inLineComment && !inString && ch == "\'") {
+                inSymbol = !inSymbol;
+            }
+            else if (parsing && ch == "/" && lastCh == "/") {
+                inLineComment = true;
+            }
+            else if (parsing && ch == "*" && lastCh == "/") {
+                inComment = true;
+            }
+            else if (ch == "/" && lastCh == "*") {
+                inComment = false;
+            }
+            else if (parsing && ch == "(") {
+                parenDepth++;
+            }
+            else if (parsing && ch == ")") {
+                parenDepth--;
+            }
+
+            lastCh = ch;
+        }
+
+        inLineComment = false;
+
+        if (parenDepth == 0) {
+            break;
+        }
+
+        if (end == lines.length - 1) {
+            return null;
+        }
+
+        end++;
+    }
+
+    if (parenDepth !== 0) return null;
+
+    return { start, end };
+}
+
 function currentDocumentRegion() {
     const activeTextEditor = vscode.window.activeTextEditor;
     const document = activeTextEditor.document;
@@ -135,98 +203,19 @@ function currentDocumentRegion() {
         return null;
 
     let selection = activeTextEditor.selection;
-    let startLine = document.lineAt(selection.start);
-    let endLine = document.lineAt(selection.end);
-
-    let startRE = new RegExp(/^\(\s*(\/\/)?\s*(.*)\s*$/);
-    let endRE = new RegExp(/^\)\s*\;?\s*(\/\/.*)?$/);
-
-    let nestDepth = 1;
-    let parenDepth = 0;
-
-    while (!startRE.test(startLine.text)) {
-        if (startLine.lineNumber == 0) {
-            startLine = null;
-            break;
-        }
-        else {
-            startLine = document.lineAt(startLine.lineNumber - 1);
-        }
-    };
-
-    if (startLine !== null) {
-        endLine = startLine;
-
-        let inComment = false;
-        let inLineComment = false;
-        let inString = false;
-        let inSymbol = false;
-        let lastCh;
-
-        while (true) {
-            for (const ch of endLine.text) {
-                const parsing = !inComment && !inLineComment && !inString && !inSymbol;
-
-                if (!inComment && !inLineComment && !inSymbol && ch == "\"") {
-                    inString = !inString;
-                }
-                else if (!inComment && !inLineComment && !inString && ch == "\'") {
-                    inSymbol = !inSymbol;
-                }
-                else if (parsing && ch == "/" && lastCh == "/") {
-                    inLineComment = true;
-                }
-                else if (parsing && ch == "*" && lastCh == "/") {
-                    inComment = true;
-                }
-                else if (ch == "/" && lastCh == "*") {
-                    inComment = false;
-                }
-                else if (parsing && ch == "(") {
-                    parenDepth++;
-                }
-                else if (parsing && ch == ")") {
-                    parenDepth--;
-                }
-
-                lastCh = ch;
-            }
-
-            inLineComment = false;
-            // if (startRE.test(endLine.text))
-            // {
-            //     nestDepth++;
-            // }
-
-            // if (endRE.test(endLine.text))
-            // {
-            //     nestDepth--;
-            // }
-
-            if (parenDepth == 0 || nestDepth == 0) {
-                break;
-            }
-
-            if (endLine.lineNumber == document.lineCount - 1) {
-                endLine = null;
-                break;
-            }
-            else {
-                endLine = document.lineAt(endLine.lineNumber + 1);
-            }
-        }
+    const lineIndex = selection.start.line;
+    const lines: string[] = [];
+    for (let i = 0; i < document.lineCount; i++) {
+        lines.push(document.lineAt(i).text);
     }
 
-    if (startLine !== null && endLine !== null) {
-        let range = new Range(
-            startLine.range.start,
-            endLine.range.end);
+    const region = findRegion(lines, lineIndex);
+    if (!region) return null;
 
-        return range;
-    }
-    else {
-        return null;
-    }
+    return new Range(
+        document.lineAt(region.start).range.start,
+        document.lineAt(region.end).range.end
+    );
 }
 
 interface EvaluateSelectionProvider {
