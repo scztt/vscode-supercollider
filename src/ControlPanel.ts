@@ -1,30 +1,36 @@
 import * as vscode from "vscode";
+import { marked, Tokens } from 'marked';
 
 // Interface definitions for control specifications
 export interface NumericSpec {
   type: 'numeric';
+  displayName?: string; // Optional display name for the control
 }
 
 export interface StringSpec {
   type: 'string';
+  displayName?: string; // Optional display name for the control
   displayPropertyName?: boolean; // Whether to show the property name (default: true)
 }
 
 export interface ActionSpec {
   type: 'action';
+  displayName?: string; // Optional display name for the control
   enabled?: boolean; // Whether the action can be triggered (default: true)
   toggleable?: boolean; // Whether this is a toggle action (default: false)
-  iconOn?: string; // VSCode icon name when toggled on (e.g., 'play', 'record')
-  iconOff?: string; // VSCode icon name when toggled off (e.g., 'stop', 'circle-large-outline')
-  colorOn?: string; // VSCode theme color when on (e.g., 'terminal.ansiGreen')
-  colorOff?: string; // VSCode theme color when off (e.g., 'disabledForeground')
+  description?: string; // Description text
 }
 
-export type ControlSpec = NumericSpec | StringSpec | ActionSpec;
+export interface PopupSpec {
+  type: 'popup';
+  displayName?: string; // Optional display name for the control
+  items: string[]; // List of items to show in the popup
+}
+
+export type ControlSpec = NumericSpec | StringSpec | ActionSpec | PopupSpec;
 
 export interface Control {
   path: string[]; // Path segments like ["audio", "oscillators", "freq"]
-  displayName?: string;
   spec: ControlSpec;
   value: number | string | boolean; // boolean for action toggle state
   normalizedValue?: number; // For numeric controls: 0-1 normalized value
@@ -66,6 +72,8 @@ export class ControlItem extends vscode.TreeItem {
       } else if (control.spec.type === 'numeric') {
         // Use custom slider icon based on value - this will be set by the provider
         this.iconPath = new vscode.ThemeIcon('symbol-number'); // Default fallback
+      } else if (control.spec.type === 'popup') {
+        this.iconPath = new vscode.ThemeIcon('list-selection');
       }
       // Don't set icon for string controls
 
@@ -89,20 +97,29 @@ export class ControlItem extends vscode.TreeItem {
   private getControlDescription(control: Control): string {
     if (control.spec.type === 'numeric') {
       return control.displayValue || String(control.value);
+    } else if (control.spec.type === 'popup') {
+      return String(control.value || '');
     } else if (control.spec.type === 'string' && typeof control.value === 'string') {
       // Don't show description if displayPropertyName is false (content will be in label)
       if (control.spec.displayPropertyName === false) {
         return '';
       }
 
-      // Strip markdown for display in tree item
-      const plainText = control.value
-        .replace(/\*\*(.+?)\*\*/g, '$1')
-        .replace(/\*(.+?)\*/g, '$1')
-        .replace(/`(.+?)`/g, '$1')
-        .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-        .replace(/\n/g, ' ')
-        .trim();
+      // Use marked to strip markdown for display in tree item
+      let plainText: string;
+      try {
+        plainText = this.markdownToPlainText(control.value);
+      } catch (error) {
+        console.warn('Failed to strip markdown, falling back to manual stripping:', error);
+        // Fallback to manual stripping
+        plainText = control.value
+          .replace(/\*\*(.+?)\*\*/g, '$1')
+          .replace(/\*(.+?)\*/g, '$1')
+          .replace(/`(.+?)`/g, '$1')
+          .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+          .replace(/\n/g, ' ')
+          .trim();
+      }
 
       // Truncate if too long
       return plainText.length > 50 ? plainText.substring(0, 47) + '...' : plainText;
@@ -110,30 +127,51 @@ export class ControlItem extends vscode.TreeItem {
     return '';
   }
 
+  private markdownToPlainText(markdown: string): string {
+    // Create a custom renderer that strips all formatting and returns plain text
+    class PlainTextRenderer extends marked.Renderer {
+      heading = ({ text }: Tokens.Heading): string => text + '\n';
+      paragraph = ({ tokens }: Tokens.Paragraph): string => this.parser.parseInline(tokens) + '\n\n';
+      strong = ({ tokens }: Tokens.Strong): string => this.parser.parseInline(tokens);
+      em = ({ tokens }: Tokens.Em): string => this.parser.parseInline(tokens);
+      codespan = ({ text }: Tokens.Codespan): string => text;
+      code = ({ text }: Tokens.Code): string => text + '\n\n';
+      link = ({ tokens }: Tokens.Link): string => this.parser.parseInline(tokens);
+      image = ({ text }: Tokens.Image): string => text || '';
+      br = (): string => '\n';
+      hr = (): string => '\n';
+      blockquote = ({ tokens }: Tokens.Blockquote): string => this.parser.parseInline(tokens);
+      list = ({ items }: Tokens.List): string => items.map(item => this.listitem(item)).join('');
+      listitem = ({ tokens }: Tokens.ListItem): string => '- ' + this.parser.parseInline(tokens) + '\n';
+      del = ({ tokens }: Tokens.Del): string => this.parser.parseInline(tokens);
+      html = (): string => '';
+    }
+
+    const renderer = new PlainTextRenderer();
+    const result = marked.parse(markdown, { renderer, async: false }) as string;
+    return result.replace(/\n+/g, ' ').trim();
+  }
+
   private getStringContentForLabel(content: string): string {
     // Extract first line or meaningful content for label
     const lines = content.split('\n');
-    let firstLine = lines[0] || '';
-
-    // Remove markdown formatting
-    firstLine = firstLine
-      .replace(/\*\*(.+?)\*\*/g, '$1')
-      .replace(/\*(.+?)\*/g, '$1')
-      .replace(/`(.+?)`/g, '$1')
-      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-      .replace(/#+\s*/, '')
-      .trim();
-
-    // Truncate if too long
-    return firstLine.length > 30 ? firstLine.substring(0, 27) + '...' : firstLine;
+    let firstLine = '';
+    for (let line of lines) {
+      if (line.trim().length > 0) {
+        firstLine = line.trim();
+        break;
+      }
+    }
+    return this.markdownToPlainText(firstLine);
   }
 
   private getActionIcon(control: Control): vscode.ThemeIcon {
     const spec = control.spec as ActionSpec;
-    if (spec.toggleable && control.value) {
-      return new vscode.ThemeIcon(spec.iconOn || 'circle-filled');
+    if (spec.toggleable) {
+      console.log(`Action icon for ${control.path.join('/')}: value=${control.value}, normalizedValue=${control.normalizedValue}`);
+      return new vscode.ThemeIcon(control.value ? 'pass-filled' : 'circle-large-outline');
     } else {
-      return new vscode.ThemeIcon(spec.iconOff || spec.iconOn || 'circle-outline');
+      return new vscode.ThemeIcon('play');
     }
   }
 }
@@ -210,8 +248,8 @@ export class ControlPanelProvider implements vscode.TreeDataProvider<ControlItem
       controls: [
         {
           path: ['info', 'status'],
-          displayName: 'System Status',
           spec: {
+            displayName: 'System Status',
             type: 'string',
             displayPropertyName: true
           },
@@ -219,8 +257,8 @@ export class ControlPanelProvider implements vscode.TreeDataProvider<ControlItem
         },
         {
           path: ['audio', 'oscillators', 'freq'],
-          displayName: 'Frequency',
           spec: {
+            displayName: 'Frequency',
             type: 'numeric'
           },
           value: 440,
@@ -229,14 +267,11 @@ export class ControlPanelProvider implements vscode.TreeDataProvider<ControlItem
         },
         {
           path: ['actions', 'record'],
-          displayName: 'Recording',
           spec: {
+            displayName: 'Recording',
             type: 'action',
             toggleable: true,
-            iconOn: 'record',
-            iconOff: 'circle-large-outline',
-            colorOn: 'terminal.ansiRed',
-            colorOff: 'disabledForeground'
+            description: 'Toggle recording'
           },
           value: false
         }
@@ -321,13 +356,11 @@ export class ControlPanelProvider implements vscode.TreeDataProvider<ControlItem
         if (control.path.length === element.path.length + 1 &&
           control.path.slice(0, -1).join('/') === element.path.join('/')) {
 
-          // Get current value from our values map
-          const key = this.pathToKey(control.path);
-          const currentValue = this.values.get(key) ?? control.value;
-          const controlWithValue = { ...control, value: currentValue };
+          // Use the control directly - it already has updated values from updateValue()
+          const controlWithValue = control;
 
           const controlItem = new ControlItem(
-            control.displayName || control.path[control.path.length - 1],
+            control.spec.displayName || control.path[control.path.length - 1],
             vscode.TreeItemCollapsibleState.None,
             'control',
             control.path,
@@ -367,26 +400,34 @@ export class ControlPanelProvider implements vscode.TreeDataProvider<ControlItem
     const oldValue = this.values.get(key);
     const control = this.getControl(path);
 
-    if (oldValue !== displayValue) {
-      this.values.set(key, displayValue);
+    this.values.set(key, displayValue);
 
-      // Mark as recently modified with timestamp
-      this.recentlyModified.set(key, Date.now());
+    // Mark as recently modified with timestamp
+    this.recentlyModified.set(key, Date.now());
 
-      // For numeric controls, also update normalized and display values
-      if (control && control.spec.type === 'numeric') {
-        if (normalizedValue !== undefined) {
-          control.normalizedValue = normalizedValue;
-        }
-        if (displayValue !== undefined) {
-          control.displayValue = displayValue;
-        }
+    if (control) {
+      // Update all values consistently for all control types
+      control.displayValue = displayValue;
+      if (normalizedValue !== undefined) {
+        control.normalizedValue = normalizedValue;
       }
 
-      console.log(`ControlPanel: Updated ${key} from ${oldValue} to ${displayValue}`);
-      // Refresh immediately to show the badge
-      this.refresh();
+      // Update the value based on control type
+      if (control.spec.type === 'numeric') {
+        control.value = normalizedValue ?? 0;
+      } else if (control.spec.type === 'action') {
+        const oldValue = control.value;
+        control.value = normalizedValue !== undefined ? normalizedValue !== 0 : false;
+        console.log(`Action value update for ${control.path.join('/')}: ${oldValue} -> ${control.value} (normalized: ${normalizedValue})`);
+      } else {
+        // String and popup controls use displayValue as their value
+        control.value = displayValue;
+      }
     }
+
+    console.log(`ControlPanel: Updated ${key} from ${oldValue} to ${displayValue}`);
+    // Refresh immediately to show the badge
+    this.refresh();
   }
 
   // Get current value
@@ -411,7 +452,7 @@ export class ControlPanelProvider implements vscode.TreeDataProvider<ControlItem
     // Send notification to SuperCollider using new format
     console.log(`ControlPanel: Sending value change to SuperCollider - ${this.pathToKey(path)} = ${newValue}`);
     if (client) {
-      client.sendNotification('supercollider/controlPanelChange', {
+      client.sendNotification('supercollider/controlPanelSetNormalized', {
         path: path,
         value: newValue
       });
@@ -428,18 +469,22 @@ export class ControlPanelProvider implements vscode.TreeDataProvider<ControlItem
         return; // Don't trigger disabled actions
       }
 
-      if (spec.toggleable) {
-        // Toggle the state - use current value from values map
-        const currentValue = this.getValue(path) ?? control.value;
-        const newValue = !currentValue;
-        this.handleValueChange(path, newValue, client);
-      } else {
-        // Send action trigger notification using new format
-        console.log(`ControlPanel: Triggering action - ${this.pathToKey(path)}`);
-        if (client) {
-          client.sendNotification('supercollider/controlPanelChange', {
+      // Always send action trigger message - server will handle toggle state if needed
+      console.log(`ControlPanel: Triggering action - ${this.pathToKey(path)}`);
+      if (client) {
+        if (spec.toggleable) {
+          client.sendNotification('supercollider/controlPanelSetNormalized', {
             path: path,
-            value: true // Actions send true when triggered
+            value: control.normalizedValue == 0 ? 1 : 0
+          });
+        } else {
+          client.sendNotification('supercollider/controlPanelSetNormalized', {
+            path: path,
+            value: 1
+          });
+          client.sendNotification('supercollider/controlPanelSetNormalized', {
+            path: path,
+            value: 0
           });
         }
       }
@@ -518,6 +563,7 @@ export class ControlDetailWebviewProvider implements vscode.WebviewViewProvider 
   private _currentPath?: string[];
   private _selectedControls: Array<{ control: Control, path: string[] }> = [];
   private _onValueChange?: (path: string[], value: number | string | boolean) => void;
+  private _onActionTrigger?: (path: string[]) => void;
 
   constructor(private readonly _extensionContext: vscode.ExtensionContext) { }
 
@@ -546,15 +592,15 @@ export class ControlDetailWebviewProvider implements vscode.WebviewViewProvider 
           }
           break;
         case 'actionTriggered':
-          if (this._currentPath && this._onValueChange) {
-            // For toggleable actions, toggle the value
-            if (this._currentControl && this._currentControl.spec.type === 'action' && this._currentControl.spec.toggleable) {
-              this._onValueChange(this._currentPath, !this._currentControl.value);
-            } else {
-              // For non-toggleable actions, send a special trigger notification
-              console.log(`Action triggered: ${this._currentPath.join('/')}`);
+          if (this._onActionTrigger) {
+            const pathToUse = message.path || this._currentPath;
+            if (pathToUse) {
+              this._onActionTrigger(pathToUse);
             }
           }
+          break;
+        case 'showPopupList':
+          this.showPopupDialog(message.items, message.current, message.path);
           break;
         case 'dragStart':
           console.log('Drag started - blocking server updates');
@@ -565,11 +611,15 @@ export class ControlDetailWebviewProvider implements vscode.WebviewViewProvider 
       }
     });
 
-    this.updateWebview();
+    this.updateWebviewForMultiple();
   }
 
   public setValueChangeHandler(handler: (path: string[], value: number | string | boolean) => void) {
     this._onValueChange = handler;
+  }
+
+  public setActionTriggerHandler(handler: (path: string[]) => void) {
+    this._onActionTrigger = handler;
   }
 
   public showControl(control: Control, path: string[]) {
@@ -578,7 +628,7 @@ export class ControlDetailWebviewProvider implements vscode.WebviewViewProvider 
     this._selectedControls = [{ control, path }];
 
     if (this._view) {
-      this.updateWebview(control, path);
+      this.updateWebviewForMultiple();
     }
   }
 
@@ -600,23 +650,9 @@ export class ControlDetailWebviewProvider implements vscode.WebviewViewProvider 
   }
 
   public updateControlValue(displayValue: string, normalizedValue?: number) {
-    if (this._currentControl && this._currentControl.spec.type === 'numeric') {
-      // Always update the control values
-      this._currentControl.displayValue = displayValue;
-      if (normalizedValue !== undefined) {
-        this._currentControl.normalizedValue = normalizedValue;
-      }
-
-      // Update the webview with new values
-      this._view?.webview.postMessage({
-        command: 'updateValue',
-        displayValue: displayValue,
-        normalizedValue: normalizedValue,
-      });
-    } else if (this._currentControl) {
-      // For non-numeric controls
-      this._currentControl.value = displayValue;
-      this.updateWebview(this._currentControl, this._currentPath);
+    if (this._currentControl && this._currentPath) {
+      // Use the unified update method for consistency
+      this.updateControlValueByPath(this._currentPath, displayValue, normalizedValue);
     }
   }
 
@@ -629,13 +665,19 @@ export class ControlDetailWebviewProvider implements vscode.WebviewViewProvider 
     if (controlIndex !== -1) {
       const controlData = this._selectedControls[controlIndex];
 
-      // Update the control data
+      // Update the control data - same semantics for all control types
+      controlData.control.displayValue = displayValue;
+      if (normalizedValue !== undefined) {
+        controlData.control.normalizedValue = normalizedValue;
+      }
+
+      // Update the value based on control type
       if (controlData.control.spec.type === 'numeric') {
-        controlData.control.displayValue = displayValue;
-        if (normalizedValue !== undefined) {
-          controlData.control.normalizedValue = normalizedValue;
-        }
+        controlData.control.value = normalizedValue ?? 0;
+      } else if (controlData.control.spec.type === 'action') {
+        controlData.control.value = normalizedValue !== undefined ? normalizedValue !== 0 : false;
       } else {
+        // String and popup controls use displayValue as their value
         controlData.control.value = displayValue;
       }
 
@@ -645,33 +687,11 @@ export class ControlDetailWebviewProvider implements vscode.WebviewViewProvider 
         path: path,
         displayValue: displayValue,
         normalizedValue: normalizedValue,
+        value: controlData.control.value
       });
     }
   }
 
-  private updateWebview(control?: Control, path?: string[]) {
-    if (!this._view) return;
-
-    if (!control) {
-      this._view.webview.html = this.getEmptyHtml();
-      return;
-    }
-
-    switch (control.spec.type) {
-      case 'numeric':
-        this._view.webview.html = this.getNumericControlHtml(control);
-        break;
-      case 'string':
-        this._view.webview.html = this.getStringControlHtml(control);
-        break;
-      case 'action':
-        this._view.webview.html = this.getActionControlHtml(control);
-        break;
-      default:
-        this._view.webview.html = this.getEmptyHtml();
-        break;
-    }
-  }
 
   private updateWebviewForMultiple() {
     if (!this._view) return;
@@ -683,6 +703,27 @@ export class ControlDetailWebviewProvider implements vscode.WebviewViewProvider 
 
     // Always use the new multi-control display (even for single selection)
     this._view.webview.html = this.getMultipleControlsHtml(this._selectedControls);
+  }
+
+  public async showPopupDialog(items: string[], current: string, path?: string[]) {
+    const selected = await vscode.window.showQuickPick(items, {
+      placeHolder: `Select value (current: ${current})`,
+      canPickMany: false
+    });
+
+    if (selected && this._onValueChange) {
+      const pathToUse = path || this._currentPath;
+      if (pathToUse) {
+        // Calculate normalized value based on position in list
+        const selectedIndex = items.indexOf(selected);
+        const normalizedValue = items.length > 1 ? selectedIndex / (items.length - 1) : 0;
+
+        console.log(`Popup selection: "${selected}" at index ${selectedIndex} of ${items.length} items, normalized: ${normalizedValue}`);
+
+        // Send normalized value to server, let server handle the display value update
+        this._onValueChange(pathToUse, normalizedValue);
+      }
+    }
   }
 
   private getEmptyHtml(): string {
@@ -716,21 +757,18 @@ export class ControlDetailWebviewProvider implements vscode.WebviewViewProvider 
     const value = control.value as string;
     const shouldShowName = control.spec.type === 'string' && control.spec.displayPropertyName !== false;
 
-    // Convert markdown to HTML with better formatting
-    let renderedHtml = value
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-      .replace(/\*(.+?)\*/g, '<em>$1</em>')
-      .replace(/`(.+?)`/g, '<code>$1</code>')
-      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>')
-      .replace(/\n\n/g, '</p><p>')
-      .replace(/\n/g, '<br>');
-
-    // Wrap in paragraphs if we have multiple lines
-    if (renderedHtml.includes('</p><p>')) {
-      renderedHtml = '<p>' + renderedHtml + '</p>';
+    // Use marked library for markdown rendering
+    let renderedHtml: string;
+    try {
+      renderedHtml = marked.parse(value) as string;
+    } catch (error) {
+      console.warn('Failed to render markdown, falling back to plain text:', error);
+      // Fallback to basic HTML escaping if markdown rendering fails
+      renderedHtml = value
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/\n/g, '<br>');
     }
 
     return `<!DOCTYPE html>
@@ -1160,7 +1198,7 @@ export class ControlDetailWebviewProvider implements vscode.WebviewViewProvider 
     }
 
     // Add the name (bold and blue)
-    pathHtml += `<span class="path-name">${control.displayName || name}</span>`;
+    pathHtml += `<span class="path-name">${control.spec.displayName || name}</span>`;
     pathHtml += '</div>';
 
     return pathHtml;
@@ -1176,7 +1214,17 @@ export class ControlDetailWebviewProvider implements vscode.WebviewViewProvider 
             font-family: var(--vscode-font-family);
             color: var(--vscode-foreground);
             background-color: var(--vscode-editor-background);
-            overflow: hidden;
+            max-height: 100vh;
+            overflow-x: visible;
+            overflow-y: auto;
+            column-count: 1;
+            column-gap: 20px;
+        }
+        @media (min-width: 600px) {
+            body { column-count: 2; }
+        }
+        @media (min-width: 1000px) {
+            body { column-count: 3; }
         }
         .multi-selection-header {
             font-size: 16px;
@@ -1192,6 +1240,7 @@ export class ControlDetailWebviewProvider implements vscode.WebviewViewProvider 
             background-color: var(--vscode-input-background);
             border-radius: 4px;
             border-left: 3px solid var(--vscode-button-background);
+            break-inside: avoid;
         }
         .control-path {
             margin-bottom: 2px;
@@ -1219,7 +1268,7 @@ export class ControlDetailWebviewProvider implements vscode.WebviewViewProvider 
         }
         .slider-container {
             position: relative;
-            height: 24px;
+            height: 100%;
             margin: 2px 0;
         }
         .slider-track {
@@ -1264,9 +1313,7 @@ export class ControlDetailWebviewProvider implements vscode.WebviewViewProvider 
             padding: 8px;
             background-color: var(--vscode-editor-background);
             border-radius: 3px;
-            font-family: var(--vscode-editor-font-family);
-            max-height: 120px;
-            overflow-y: auto;
+            font-family: var(--vscode-font-family);
             line-height: 1.4;
         }
         .string-control .control-value code {
@@ -1294,8 +1341,7 @@ export class ControlDetailWebviewProvider implements vscode.WebviewViewProvider 
         
         /* Action control styles */
         .action-control .action-button {
-            width: 100%;
-            padding: 8px 12px;
+            width: 100%; height: 100%;
             border: none;
             border-radius: 4px;
             font-size: 14px;
@@ -1304,25 +1350,124 @@ export class ControlDetailWebviewProvider implements vscode.WebviewViewProvider 
             background-color: var(--vscode-button-background);
             color: var(--vscode-button-foreground);
         }
-        .action-button.toggle-on {
-            background-color: var(--vscode-inputValidation-infoBackground);
-            color: var(--vscode-inputValidation-infoForeground);
+        /* Toggleable buttons - ON state */
+        .action-button.toggleable.toggle-on {
+            background-color: var(--vscode-button-background);
+            color: var(--vscode-button-foreground);
+        }
+        /* Toggleable buttons - OFF state */
+        .action-button.toggleable.toggle-off {
+            background-color: var(--vscode-button-secondaryBackground);
+            color: var(--vscode-button-secondaryForeground);
+        }
+        /* Non-toggleable buttons - always lit */
+        .action-button.non-toggleable.always-on {
+            background-color: var(--vscode-button-background);
+            color: var(--vscode-button-foreground);
+        }
+        .action-button.clicked {
+            background-color: var(--vscode-button-hoverBackground);
+            transition: background-color 0.1s ease;
+        }
+        .action-button:hover {
+            opacity: 0.9;
         }
         
+        /* Popup control styles */
+        .popup-control {
+            position: relative;
+            width: 100%; height: 100%;
+        }
+        .popup-dropdown {
+            position: relative;
+            width: 100%; height: 100%;
+            cursor: pointer;
+        }
+        .popup-current {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding-left: 8px;
+            background-color: var(--vscode-input-background);
+            border: 1px solid var(--vscode-input-border);
+            border-radius: 4px;
+            font-weight: 500;
+            height: 100%;
+            user-select: none;
+        }
+        .popup-arrow {
+            margin-left: 8px;
+            font-size: 10px;
+            color: var(--vscode-descriptionForeground);
+            transition: transform 0.2s ease;
+        }
+        .popup-dropdown.open .popup-arrow {
+            transform: rotate(180deg);
+        }
+        .popup-list {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background-color: var(--vscode-dropdown-background);
+            border: 1px solid var(--vscode-dropdown-border);
+            border-top: none;
+            border-radius: 0 0 4px 4px;
+            max-height: 200px;
+            overflow-y: auto;
+            z-index: 1000;
+            display: none;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+        }
+        .popup-list.flip-up {
+            top: auto;
+            bottom: 100%;
+            border-top: 1px solid var(--vscode-dropdown-border);
+            border-bottom: none;
+            border-radius: 4px 4px 0 0;
+            box-shadow: 0 -4px 8px rgba(0, 0, 0, 0.2);
+        }
+        .popup-dropdown.open .popup-list {
+            display: block;
+        }
+        .popup-item {
+            padding: 8px 12px;
+            cursor: pointer;
+            transition: background-color 0.1s ease;
+        }
+        .popup-item:hover {
+            background-color: var(--vscode-list-hoverBackground);
+        }
+        .popup-item:active {
+            background-color: var(--vscode-list-activeSelectionBackground);
+        }
+
+        .numeric-control { height: 24px; }
+        .action-control { height: 24px; }
+        .popup-control { height: 24px; }
+
         @media (max-height: 300px) {
             body { padding: 6px; font-size: 13px; }
             .control-item { padding: 4px; margin-bottom: 4px; }
-            .slider-container { height: 20px; }
+            .numeric-control { height: 20px; }
+            .action-control { height: 20px; }
+            .popup-control { height: 20px; }
             .slider-value-overlay { font-size: 12px; }
             .control-path { font-size: 10px; margin-bottom: 2px; padding-bottom: 2px; }
+            .action-control .action-button { font-size: 12px; }
+            .popup-current { font-size: 12px; }
         }
         
         @media (max-height: 160px) {
             body { padding: 2px; font-size: 10px; }
             .control-item { padding: 2px; margin-bottom: 2px; }
-            .slider-container { height: 16px; }
+            .numeric-control { height: 16px; }
+            .action-control { height: 16px; }
+            .popup-control { height: 16px; }
             .slider-value-overlay { font-size: 10px; }
             .control-path { font-size: 8px; margin-bottom: 1px; padding-bottom: 1px; }
+            .action-control action-button { font-size: 10px; }
+            .popup-current { font-size: 10px; }
         }
     </style>
 </head>
@@ -1344,7 +1489,7 @@ export class ControlDetailWebviewProvider implements vscode.WebviewViewProvider 
       }
 
       // Add the name (bold and blue)
-      pathHtml += `<span class="path-name">${control.displayName || name}</span>`;
+      pathHtml += `<span class="path-name">${control.spec.displayName || name}</span>`;
       pathHtml += '</div>';
 
       html += `<div class="control-item">
@@ -1368,20 +1513,19 @@ export class ControlDetailWebviewProvider implements vscode.WebviewViewProvider 
 
       } else if (control.spec.type === 'string') {
         const value = String(control.value);
-        // Convert markdown to HTML
-        const renderedHtml = value
-          .replace(/&/g, '&amp;')
-          .replace(/</g, '&lt;')
-          .replace(/>/g, '&gt;')
-          .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-          .replace(/\*(.+?)\*/g, '<em>$1</em>')
-          .replace(/`(.+?)`/g, '<code>$1</code>')
-          .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>')
-          .replace(/\n\n/g, '</p><p>')
-          .replace(/\n/g, '<br>');
-
-        // Wrap in paragraphs if we have multiple lines
-        const finalHtml = renderedHtml.includes('</p><p>') ? '<p>' + renderedHtml + '</p>' : renderedHtml;
+        // Convert markdown to HTML using marked library
+        let finalHtml: string;
+        try {
+          finalHtml = marked.parse(value) as string;
+        } catch (error) {
+          console.warn('Failed to render markdown, falling back to plain text:', error);
+          // Fallback to basic HTML escaping if markdown rendering fails
+          finalHtml = value
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/\n/g, '<br>');
+        }
 
         html += `<div class="string-control">
           <div class="control-value">${finalHtml}</div>
@@ -1389,12 +1533,34 @@ export class ControlDetailWebviewProvider implements vscode.WebviewViewProvider 
 
       } else if (control.spec.type === 'action') {
         const spec = control.spec as ActionSpec;
-        const isOn = control.value === true;
-        const buttonText = spec.toggleable ? (isOn ? 'ON' : 'OFF') : 'Trigger';
-        const buttonClass = spec.toggleable && isOn ? 'toggle-on' : '';
+        const isOn = control.value === true || control.normalizedValue === 1;
+        const buttonText = control.displayValue;
+        // For toggleable buttons, show different styling based on state
+        // For non-toggleable buttons, always show as lit (primary styling)
+        const toggleClass = spec.toggleable ? 'toggleable' : 'non-toggleable';
+        const stateClass = spec.toggleable ? (isOn ? 'toggle-on' : 'toggle-off') : 'always-on';
+        const pathStr = path.join('/');
 
         html += `<div class="action-control">
-          <button class="action-button ${buttonClass}">${buttonText}</button>
+          <button class="action-button ${toggleClass} ${stateClass}" data-path="${pathStr}">${buttonText}</button>
+        </div>`;
+
+      } else if (control.spec.type === 'popup') {
+        const spec = control.spec as PopupSpec;
+        const currentValue = control.value || spec.items?.[0] || '';
+        const pathStr = path.join('/');
+        const cleanId = pathStr.replace(/[^a-zA-Z0-9]/g, '_');
+
+        html += `<div class="popup-control" id="popup-container-${cleanId}">
+          <div class="popup-dropdown" data-path="${pathStr}">
+            <div class="popup-current" id="popup-current-${cleanId}">
+              <span class="popup-text">${currentValue}</span>
+              <span class="popup-arrow">▼</span>
+            </div>
+            <div class="popup-list" id="popup-list-${cleanId}">
+              ${spec.items.map(item => `<div class="popup-item" data-value="${item}">${item}</div>`).join('')}
+            </div>
+          </div>
         </div>`;
       }
 
@@ -1517,8 +1683,88 @@ export class ControlDetailWebviewProvider implements vscode.WebviewViewProvider 
             }
         });
         
+        // Action button handlers
+        document.querySelectorAll('.action-button').forEach(button => {
+            const path = button.getAttribute('data-path');
+            
+            button.addEventListener('click', (e) => {
+                // Prevent double clicks
+                e.preventDefault();
+                
+                // Add visual click feedback
+                button.classList.add('clicked');
+                setTimeout(() => button.classList.remove('clicked'), 150);
+                
+                vscode.postMessage({
+                    command: 'actionTriggered',
+                    path: path.split('/')
+                });
+            });
+        });
+        
+        // Popup dropdown handlers
+        document.querySelectorAll('.popup-dropdown').forEach(dropdown => {
+            const path = dropdown.getAttribute('data-path');
+            const pathClean = path.replace(/[^a-zA-Z0-9]/g, '_');
+            const currentDiv = document.getElementById('popup-current-' + pathClean);
+            const listDiv = document.getElementById('popup-list-' + pathClean);
+            
+            // Toggle dropdown on click
+            currentDiv.addEventListener('click', (e) => {
+                e.stopPropagation();
+                dropdown.classList.toggle('open');
+                
+                // Check if dropdown should flip up to stay in viewport
+                if (dropdown.classList.contains('open')) {
+                    const rect = dropdown.getBoundingClientRect();
+                    const listHeight = 200; // max-height of popup-list
+                    const spaceBelow = window.innerHeight - rect.bottom;
+                    const spaceAbove = rect.top;
+                    
+                    // If not enough space below but enough space above, flip up
+                    if (spaceBelow < listHeight && spaceAbove > listHeight) {
+                        listDiv.classList.add('flip-up');
+                    } else {
+                        listDiv.classList.remove('flip-up');
+                    }
+                }
+            });
+            
+            // Handle item selection
+            listDiv.querySelectorAll('.popup-item').forEach(item => {
+                item.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const selectedValue = item.getAttribute('data-value');
+                    
+                    // Update display
+                    currentDiv.querySelector('.popup-text').textContent = selectedValue;
+                    dropdown.classList.remove('open');
+                    
+                    // Calculate normalized value and send to server
+                    const allItems = Array.from(listDiv.querySelectorAll('.popup-item'));
+                    const selectedIndex = allItems.indexOf(item);
+                    const normalizedValue = allItems.length > 1 ? selectedIndex / (allItems.length - 1) : 0;
+                    
+                    console.log('Popup selection:', selectedValue, 'index:', selectedIndex, 'normalized:', normalizedValue);
+                    
+                    vscode.postMessage({
+                        command: 'valueChanged',
+                        path: path.split('/'),
+                        value: normalizedValue
+                    });
+                });
+            });
+        });
+        
+        // Close dropdowns when clicking outside
+        document.addEventListener('click', () => {
+            document.querySelectorAll('.popup-dropdown.open').forEach(dropdown => {
+                dropdown.classList.remove('open');
+            });
+        });
+        
         // Debug logging
-        console.log('Slider setup complete. Found', document.querySelectorAll('.slider-overlay').length, 'sliders');
+        console.log('Control setup complete. Found', document.querySelectorAll('.slider-overlay').length, 'sliders,', document.querySelectorAll('.action-button').length, 'action buttons,', document.querySelectorAll('.popup-dropdown').length, 'popup dropdowns');
         
         // Listen for updates from server
         window.addEventListener('message', event => {
@@ -1549,6 +1795,29 @@ export class ControlDetailWebviewProvider implements vscode.WebviewViewProvider 
                         valueElement.textContent = message.displayValue;
                     }
                 }
+                
+                // Update popup controls
+                if (message.value !== undefined && typeof message.value === 'string') {
+                    const popupTextElement = document.querySelector(\`#popup-current-\${sliderId} .popup-text\`);
+                    if (popupTextElement) {
+                        popupTextElement.textContent = message.value;
+                    }
+                }
+                
+                // Update action button states
+                if (message.normalizedValue !== undefined) {
+                    const button = document.querySelector(\`.action-button[data-path="\${pathStr}"]\`);
+                    if (button) {
+                        button.textContent = message.displayValue;
+                        if (message.normalizedValue === 1) {
+                            button.classList.add('toggle-on');
+                            button.classList.remove('toggle-off');
+                        } else {
+                            button.classList.add('toggle-off');
+                            button.classList.remove('toggle-on');
+                        }
+                    }
+                }
             }
         });
     </script>
@@ -1564,14 +1833,14 @@ export class ControlDetailWebviewProvider implements vscode.WebviewViewProvider 
     const isOn = control.value === true;
     const isEnabled = spec.enabled !== false;
 
-    let buttonText = control.displayName || control.path[control.path.length - 1];
+    let buttonText = control.spec.displayName || control.path[control.path.length - 1];
     let buttonClass = 'btn-primary';
 
     if (!isEnabled) {
       buttonText = `${buttonText} (Disabled)`;
       buttonClass = 'btn-disabled';
     } else if (isToggleable) {
-      buttonText = `${buttonText} (${isOn ? 'ON' : 'OFF'})`;
+      buttonText = `${buttonText}`;
       buttonClass = isOn ? 'btn-success' : 'btn-secondary';
     }
 
@@ -1591,14 +1860,14 @@ export class ControlDetailWebviewProvider implements vscode.WebviewViewProvider 
         @media (max-width: 400px) {
             body { padding: 10px; font-size: 13px; }
             .control-path { font-size: 12px; margin-bottom: 6px; padding-bottom: 4px; }
-            .action-button { padding: 8px 12px; margin: 8px 0; font-size: 14px; }
+            .action-button { font-size: 14px; }
             .action-info { margin-top: 6px; padding: 6px; font-size: 11px; }
         }
         
         @media (max-width: 300px) {
             body { padding: 6px; font-size: 12px; }
             .control-path { font-size: 11px; margin-bottom: 4px; padding-bottom: 3px; }
-            .action-button { padding: 6px 10px; margin: 6px 0; font-size: 13px; }
+            .action-button { font-size: 13px; }
             .action-info { margin-top: 4px; padding: 4px; font-size: 10px; }
         }
         .control-path {
@@ -1621,8 +1890,6 @@ export class ControlDetailWebviewProvider implements vscode.WebviewViewProvider 
         }
         .action-button {
             width: 100%;
-            padding: 12px 16px;
-            margin: 12px 0;
             border: none;
             border-radius: 6px;
             cursor: pointer;
@@ -1655,6 +1922,10 @@ export class ControlDetailWebviewProvider implements vscode.WebviewViewProvider 
             cursor: not-allowed;
             opacity: 0.6;
         }
+        .action-button.clicked {
+            background-color: var(--vscode-button-hoverBackground);
+            transition: background-color 0.1s ease;
+        }
         .action-info {
             margin-top: 10px;
             padding: 8px;
@@ -1681,10 +1952,146 @@ export class ControlDetailWebviewProvider implements vscode.WebviewViewProvider 
     
     <script>
         const vscode = acquireVsCodeApi();
+        const button = document.querySelector('.action-button');
         
         function triggerAction() {
-            ${isEnabled ? 'vscode.postMessage({ command: "actionTriggered" });' : ''}
+            if (${isEnabled}) {
+                // Add visual click feedback
+                button.classList.add('clicked');
+                setTimeout(() => button.classList.remove('clicked'), 150);
+                
+                vscode.postMessage({ command: "actionTriggered" });
+            }
         }
+    </script>
+</body>
+</html>`;
+  }
+
+  private getPopupControlHtml(control: Control): string {
+    const spec = control.spec as PopupSpec;
+    const items = spec.items || [];
+    const currentValue = control.value as string || items[0] || '';
+
+    return `<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body {
+            padding: 20px;
+            font-family: var(--vscode-font-family);
+            color: var(--vscode-foreground);
+            background-color: var(--vscode-editor-background);
+            overflow: hidden;
+        }
+        
+        @media (max-width: 400px) {
+            body { padding: 12px; font-size: 13px; }
+            .control-path { font-size: 12px; margin-bottom: 6px; padding-bottom: 4px; }
+            .popup-button { padding: 8px 12px; font-size: 14px; }
+        }
+        
+        @media (max-width: 300px) {
+            body { padding: 8px; font-size: 12px; }
+            .control-path { font-size: 11px; margin-bottom: 4px; padding-bottom: 3px; }
+            .popup-button { padding: 6px 10px; font-size: 13px; }
+        }
+        
+        .control-path {
+            margin-bottom: 10px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid var(--vscode-input-border);
+            font-size: 14px;
+            line-height: 1.2;
+            font-variant: small-caps;
+        }
+        .path-segment {
+            color: var(--vscode-foreground);
+        }
+        .path-separator {
+            color: var(--vscode-descriptionForeground);
+            margin: 0 6px;
+        }
+        .path-name {
+            font-weight: bold;
+            color: var(--vscode-textLink-foreground);
+        }
+        
+        .popup-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-top: 20px;
+        }
+        
+        .current-value {
+            font-size: 18px;
+            font-weight: bold;
+            text-align: center;
+            margin-bottom: 15px;
+            padding: 10px 20px;
+            background-color: var(--vscode-input-background);
+            border-radius: 6px;
+            min-width: 200px;
+        }
+        
+        .popup-button {
+            padding: 10px 20px;
+            font-size: 14px;
+            font-weight: 500;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s;
+            background-color: var(--vscode-button-background);
+            color: var(--vscode-button-foreground);
+        }
+        
+        .popup-button:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+        }
+        
+        .popup-button:active {
+            transform: translateY(0);
+            box-shadow: none;
+        }
+    </style>
+</head>
+<body>
+    ${this.getControlPathHtml(control)}
+    
+    <div class="popup-container">
+        <div class="current-value" id="currentValue">${currentValue}</div>
+        <button id="selectButton" class="popup-button">Select Item</button>
+    </div>
+    
+    <script>
+        const vscode = acquireVsCodeApi();
+        const button = document.getElementById('selectButton');
+        const valueDisplay = document.getElementById('currentValue');
+        
+        let currentValue = "${currentValue}";
+        const items = ${JSON.stringify(items)};
+        
+        button.addEventListener('click', () => {
+            vscode.postMessage({
+                command: 'showPopupList',
+                items: items,
+                current: currentValue
+            });
+        });
+        
+        // Listen for updates from server
+        window.addEventListener('message', event => {
+            const message = event.data;
+            if (message.command === 'updateValue') {
+                if (message.value !== undefined) {
+                    currentValue = message.value;
+                    valueDisplay.textContent = currentValue;
+                }
+            }
+        });
     </script>
 </body>
 </html>`;
@@ -1717,6 +2124,11 @@ export class ControlPanel {
     // Set up value change handler
     this.detailView.setValueChangeHandler((path: string[], value: number | string | boolean) => {
       this.provider.handleValueChange(path, value, this.client);
+    });
+
+    // Set up action trigger handler
+    this.detailView.setActionTriggerHandler((path: string[]) => {
+      this.provider.handleActionTrigger(path, this.client);
     });
 
     // Handle tree selection changes (multi-select)
@@ -1772,7 +2184,7 @@ export class ControlPanel {
     if (control.spec.type === 'numeric') {
       // For numeric controls, show a simple input for the display value
       const displayValue = control.displayValue || String(control.value);
-      const prompt = `${control.displayName || control.path[control.path.length - 1]} (current: ${displayValue})`;
+      const prompt = `${control.spec.displayName || control.path[control.path.length - 1]} (current: ${displayValue})`;
 
       const input = await vscode.window.showInputBox({
         prompt: prompt,
@@ -1799,9 +2211,13 @@ export class ControlPanel {
       markdownString.isTrusted = true;
 
       await vscode.window.showInformationMessage(
-        `${control.displayName || control.path[control.path.length - 1]}`,
+        `${control.spec.displayName || control.path[control.path.length - 1]}`,
         { modal: true, detail: currentValue as string }
       );
+    } else if (control.spec.type === 'popup') {
+      // For popup controls, show the dialog using the detail view
+      const spec = control.spec as PopupSpec;
+      await this.detailView.showPopupDialog(spec.items, currentValue as string, path);
     }
   }
 
