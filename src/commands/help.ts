@@ -160,15 +160,12 @@ async function searchHelpInActiveDocument(client: vscodelc.LanguageClient) {
     }
 }
 
-export function activate(context: SuperColliderContext) {
-    readFrontendFiles();
+export async function searchHelp(client: vscodelc.LanguageClient) {
+    await searchHelpInActiveDocument(client);
+}
 
-    context.subscriptions.push(
-        vscode.commands.registerCommand(
-            'supercollider.searchHelp',
-            async () => {
-                await searchHelpInActiveDocument(context.client)
-            }));
+export function activate() {
+    readFrontendFiles();
 }
 
 export function deactivate(context: SuperColliderContext) {

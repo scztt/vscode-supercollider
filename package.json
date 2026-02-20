@@ -334,6 +334,14 @@
                     "name": "Control Detail",
                     "icon": "$(preview)",
                     "contextualTitle": "Control Detail View"
+                },
+                {
+                    "id": "supercolliderSclangInfo",
+                    "type": "webview",
+                    "name": "sclang",
+                    "icon": "$(terminal)",
+                    "contextualTitle": "sclang Process Info",
+                    "visibility": "collapsed"
                 }
             ]
         },
@@ -349,7 +357,7 @@
         "viewsWelcome": [
             {
                 "view": "supercolliderControls",
-                "contents": "No controls loaded.\n[Open SuperCollider File](command:supercollider.restart)"
+                "contents": "Welcome to SuperCollider\n\nNo controls loaded. See ControlPanelNotification to add controls to this panel."
             }
         ],
         "menus": {

@@ -96,7 +96,7 @@ export async function activate(context: vscode.ExtensionContext) {
                 }
             }
 
-            help.activate(supercolliderContext);
+            help.activate();
             supercolliderContext.client.onNotification('supercollider/serverStatus', (data) => {
                 serverStatusBar.updateStatusBar(data);
             });
@@ -270,6 +270,16 @@ export async function activate(context: vscode.ExtensionContext) {
         'supercollider.cmdPeriod',
         async () => {
             supercolliderContext.executeCommand('supercollider.internal.cmdPeriod')
+        }));
+
+    context.subscriptions.push(vscode.commands.registerCommand(
+        'supercollider.searchHelp',
+        async () => {
+            if (!supercolliderContext?.client?.isRunning()) {
+                vscode.window.showWarningMessage('SuperCollider must be running to search help');
+                return;
+            }
+            await help.searchHelp(supercolliderContext.client);
         }));
 
     context.subscriptions.push(serverStatusBar.getStatusBarItem());
