@@ -14,10 +14,7 @@
 
 # How to Install
 
-1. Download a **current develop build** of SuperCollider (the extension requires recent changes you may not have)
-    https://supercollider.s3.amazonaws.com/builds/supercollider/supercollider/osx/develop-latest.html
-    https://supercollider.s3.amazonaws.com/builds/supercollider/supercollider/win32/develop-latest.html
-    https://supercollider.s3.amazonaws.com/builds/supercollider/supercollider/win64/develop-latest.html
+1. Download SuperCollider **3.14.0 or later**.
 
 2. Download the .vsix file from the latest release:
     https://github.com/scztt/vscode-supercollider/releases
@@ -56,13 +53,7 @@
     npm install
     ```
 
-3. Build or download the supercollider `topic/refactor-com-port` branch:
-   
-    CI builds: https://github.com/supercollider/supercollider/actions?query=branch%3Atopic%2Frefactor-com-port++ (click the most recent green build, scroll to "Artifacts" to find the builds)
-
-    https://github.com/supercollider/supercollider/tree/topic/refactor-com-port
-
-4. Install LanguageServer.quark
+3. Install LanguageServer.quark
    
     ```
     // (in SuperCollider...)
