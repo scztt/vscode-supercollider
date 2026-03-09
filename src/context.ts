@@ -258,14 +258,6 @@ export class SuperColliderContext implements Disposable, EvaluationDelegate, Com
         this.setState('stopped');
     }
 
-    async cleanup() {
-        this.disposeProcess();
-        this.subscriptions.forEach((d) => {
-            d.dispose();
-        });
-        // this.subscriptions = [];
-    };
-
     dispose() {
         this._outputEventEmitter.dispose();
         this._stateChangeEmitter.dispose();
