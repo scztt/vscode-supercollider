@@ -187,6 +187,10 @@ export class ControlPanelProvider implements vscode.TreeDataProvider<ControlItem
   private recentlyModified: Map<string, number> = new Map(); // Key is path.join('/'), value is timestamp
   private badgeCleanupInterval: NodeJS.Timer | undefined;
   private readonly BADGE_DURATION_MS = 5 * 1000;
+  private refreshTimer: ReturnType<typeof setTimeout> | undefined;
+  private refreshPending = false;
+  private lastRefreshTime = 0;
+  private readonly REFRESH_THROTTLE_MS = 1000;
 
   constructor(extensionUri: vscode.Uri) {
     this.extensionUri = extensionUri;
@@ -287,7 +291,29 @@ export class ControlPanelProvider implements vscode.TreeDataProvider<ControlItem
   }
 
   refresh(): void {
-    this._onDidChangeTreeData.fire();
+    const now = Date.now();
+    const elapsed = now - this.lastRefreshTime;
+
+    if (elapsed >= this.REFRESH_THROTTLE_MS) {
+      // Enough time has passed — fire immediately
+      this.lastRefreshTime = now;
+      this.refreshPending = false;
+      if (this.refreshTimer) {
+        clearTimeout(this.refreshTimer);
+        this.refreshTimer = undefined;
+      }
+      this._onDidChangeTreeData.fire();
+    } else if (!this.refreshPending) {
+      // Within cooldown — schedule one trailing fire
+      this.refreshPending = true;
+      this.refreshTimer = setTimeout(() => {
+        this.refreshTimer = undefined;
+        this.refreshPending = false;
+        this.lastRefreshTime = Date.now();
+        this._onDidChangeTreeData.fire();
+      }, this.REFRESH_THROTTLE_MS - elapsed);
+    }
+    // else: already have a pending refresh scheduled, just let data accumulate
   }
 
   // Update the panel data from SuperCollider
