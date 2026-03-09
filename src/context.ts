@@ -391,6 +391,9 @@ export class SuperColliderContext implements Disposable, EvaluationDelegate, Com
 
                             reader.dispose();
                             writer.dispose();
+                            if (that.sclangProcess === sclangProcess) {
+                                that.disposeProcess();
+                            }
                         })
                         .on('error', async (err) => {
                             // Emit error event
@@ -401,13 +404,17 @@ export class SuperColliderContext implements Disposable, EvaluationDelegate, Com
 
                             reader.dispose();
                             writer.dispose()
+                            if (that.sclangProcess === sclangProcess) {
                             that.disposeProcess();
+                            }
                         });
 
                     sclangProcess.on('exit', async (code, signal) => {
                         reader.dispose();
                         writer.dispose()
+                        if (that.sclangProcess === sclangProcess) {
                         that.disposeProcess();
+                        }
                     });
 
                     // Emit startup message
