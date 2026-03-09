@@ -39,36 +39,45 @@ const lspAddress = '127.0.0.1';
 
 const startingPort = 58110;
 const portIncrement = 10;
-const serverPortKey = 'supercollider.serverPortAllocations.1';
-const serverPortSession = 'supercollider.serverPortAllocationsSession.1';
+const serverPortKey = 'supercollider.serverPortAllocations.2';
+const heartbeatIntervalMs = 60_000;
+const allocationTimeoutMs = heartbeatIntervalMs + 60_000;
 
+interface PortAllocation {
+    port: number;
+    updatedAt: number;
+    instanceId: string;
+}
+
+// Each instance heartbeats its port allocation every 60s via globalState.
+// Stale entries (no heartbeat for 120s) are garbage-collected on next startup.
+// We don't clean up in dispose/deactivate because VS Code cancels all async
+// operations (including globalState.update) during shutdown.
 class ServerPortRange implements Disposable {
     start: number;
-    globalState: vscode.Memento;
+    private globalState: vscode.Memento;
+    private instanceId: string;
+    private heartbeatTimer: ReturnType<typeof setInterval>;
 
     constructor(globalState: vscode.Memento) {
         this.globalState = globalState;
-        const currentSessionID = this.globalState.get<string>(serverPortSession, "");
-        if (vscode.env.sessionId != currentSessionID) {
-            console.log("New session, so clearing port allocations");
-            this.globalState.update(serverPortKey, Array<number>());
-        }
-        this.globalState.update(serverPortSession, vscode.env.sessionId);
+        this.instanceId = vscode.env.sessionId;
 
-        const allocatedPorts = this.globalState.get<Array<number>>(serverPortKey, Array<number>());
-        console.log(`Previously allocated ports: ${allocatedPorts}`);
-        this.start = this.findFreePort(allocatedPorts);
-        this.globalState.update(serverPortKey, allocatedPorts.concat(this.start));
+        this.garbageCollect();
+
+        const allocations = this.getAllocations();
+        const existing = allocations.find(a => a.instanceId === this.instanceId);
+
+        if (existing) {
+            this.start = existing.port;
+            existing.updatedAt = Date.now();
+        } else {
+            this.start = this.findFreePort(allocations.map(a => a.port));
+            allocations.push({ port: this.start, updatedAt: Date.now(), instanceId: this.instanceId });
     }
 
-    findFreePort(allocatedPorts: Array<number>) {
-        let port = startingPort;
-
-        while (allocatedPorts.includes(port)) {
-            port += portIncrement;
-        }
-
-        return port;
+        this.setAllocations(allocations);
+        this.heartbeatTimer = setInterval(() => this.heartbeat(), heartbeatIntervalMs);
     }
 
     portRange() {
@@ -76,10 +85,41 @@ class ServerPortRange implements Disposable {
     }
 
     dispose() {
-        const allocatedPorts = this.globalState.get<Array<number>>(serverPortKey, []);
-        const index = allocatedPorts.indexOf(this.start);
-        if (index > -1) { allocatedPorts.splice(index, 1); }
-        this.globalState.update(serverPortKey, allocatedPorts);
+        clearInterval(this.heartbeatTimer);
+    }
+
+    private getAllocations(): PortAllocation[] {
+        return this.globalState.get<PortAllocation[]>(serverPortKey, []);
+    }
+
+    private setAllocations(allocations: PortAllocation[]) {
+        this.globalState.update(serverPortKey, allocations);
+    }
+
+    private garbageCollect() {
+        const now = Date.now();
+        const allocations = this.getAllocations();
+        const live = allocations.filter(a => (now - a.updatedAt) < allocationTimeoutMs);
+        if (live.length < allocations.length) {
+            this.setAllocations(live);
+        }
+    }
+
+    private heartbeat() {
+        const allocations = this.getAllocations();
+        const entry = allocations.find(a => a.instanceId === this.instanceId);
+        if (entry) {
+            entry.updatedAt = Date.now();
+            this.setAllocations(allocations);
+        }
+    }
+
+    private findFreePort(allocatedPorts: number[]): number {
+        let port = startingPort;
+        while (allocatedPorts.includes(port)) {
+            port += portIncrement;
+        }
+        return port;
     }
 };
 
@@ -496,6 +536,10 @@ export class SuperColliderContext implements Disposable, EvaluationDelegate, Com
         if (!this.activated) { return }
 
         this.activated = false;
+
+        this.serverPorts?.dispose();
+        this.serverPorts = null;
+
         this.globalState = null;
         this.outputChannel = null;
 
