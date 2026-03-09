@@ -32,11 +32,11 @@ export const internalCommands = [
     'supercollider.internal.cmdPeriod',
 ];
 
+let supercolliderContext: SuperColliderContext = null;
+
 export async function activate(context: vscode.ExtensionContext) {
     const outputChannel = vscode.window.createOutputChannel('supercollider', 'supercollider-log');
     context.subscriptions.push(outputChannel);
-
-    let supercolliderContext: SuperColliderContext = null;
 
     const serverStatusBar = new ServerStatusBar();
     const controlPanel = new ControlPanel(context);
@@ -298,7 +298,9 @@ export async function activate(context: vscode.ExtensionContext) {
     outputChannel.appendLine('SuperCollider extension activated');
 }
 
-function deactivate() { }
+async function deactivate() {
+    await supercolliderContext?.deactivate();
+}
 
 exports.activate = activate;
 exports.deactivate = deactivate;
