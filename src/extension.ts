@@ -11,6 +11,7 @@ import * as defaults from './util/defaults'
 import { getSclangPath } from './util/sclang';
 import { ServerStatusBar } from './ServerStatusBar';
 import { ControlPanel } from './ControlPanel';
+import { SclangInfoWebviewProvider } from './SclangInfoPanel';
 import { SuperColliderFormatter } from './providers/FormattingProvider';
 import { startMcpServer, getMcpServer } from './mcp/server';
 
@@ -39,6 +40,10 @@ export async function activate(context: vscode.ExtensionContext) {
 
     const serverStatusBar = new ServerStatusBar();
     const controlPanel = new ControlPanel(context);
+    const sclangInfoPanel = new SclangInfoWebviewProvider(context);
+    context.subscriptions.push(
+        vscode.window.registerWebviewViewProvider(SclangInfoWebviewProvider.viewType, sclangInfoPanel)
+    );
 
     vscode.languages.registerDocumentDropEditProvider({ language: 'supercollider' }, {
         provideDocumentDropEdits: (document: TextDocument, position: Position, dataTransfer: DataTransfer, token: CancellationToken) => {
@@ -74,8 +79,7 @@ export async function activate(context: vscode.ExtensionContext) {
         try {
             if (!supercolliderContext) {
                 supercolliderContext = new SuperColliderContext();
-                // help.deactivate(supercolliderContext)
-                // supercolliderContext.dispose();
+                context.subscriptions.push(supercolliderContext);
             }
 
             await supercolliderContext.activate(outputChannel, context.globalState);

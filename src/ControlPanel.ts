@@ -191,7 +191,7 @@ export class ControlPanelProvider implements vscode.TreeDataProvider<ControlItem
   constructor(extensionUri: vscode.Uri) {
     this.extensionUri = extensionUri;
     // Initialize with example data
-    this.data = this.createExampleData();
+    this.data = { controls: [] };
     this.buildCategoryTree();
     this.initializeValues();
 

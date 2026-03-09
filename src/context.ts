@@ -5,13 +5,8 @@ import {
     Disposable,
     workspace,
     EventEmitter,
-    TextDocument,
-    CancellationToken,
-    ProviderResult,
-    CodeLens
 } from 'vscode';
 import {
-    CodeLensMiddleware,
     ExecuteCommandRequest,
     FoldingRangeProviderMiddleware,
     FoldingRangeRequest,
@@ -129,6 +124,8 @@ export interface OutputMessage {
     source: 'sclang' | 'vscode';
 }
 
+export type SclangState = 'stopped' | 'starting' | 'running';
+
 // Add a delegate interface for evaluation
 export interface EvaluationResult {
     result: string | null;
@@ -160,9 +157,32 @@ export class SuperColliderContext implements Disposable, EvaluationDelegate, Com
     liveshareHost: LiveshareHost;
     commandDelegate: CommandDelegate;
 
+    resolvedSclangPath: string | null = null;
+    resolvedConfYamlPath: string | null = null;
+    serverConfYamlPath: string | null = null;
+    serverIncludePaths: string[] = [];
+    serverExcludePaths: string[] = [];
+    sclangArgs: string[] = [];
+    startupFiles: string[] = [];
+    sclangVersion: string | null = null
+
+
     // Create event emitter for output messages
     private _outputEventEmitter = new EventEmitter<OutputMessage>();
     readonly onOutputMessage = this._outputEventEmitter.event;
+
+    // State tracking
+    private _state: SclangState = 'stopped';
+    private _stateChangeEmitter = new EventEmitter<SclangState>();
+    readonly onStateChange = this._stateChangeEmitter.event;
+
+    get state(): SclangState { return this._state; }
+    private setState(state: SclangState) {
+        if (this._state !== state) {
+            this._state = state;
+            this._stateChangeEmitter.fire(state);
+        }
+    }
 
     async processOptions(readPort: number, writePort: number) {
         const configuration = workspace.getConfiguration()
@@ -190,6 +210,9 @@ export class SuperColliderContext implements Disposable, EvaluationDelegate, Com
                 // No files, so use the default
             }
         }
+
+        this.resolvedSclangPath = sclangPath;
+        this.resolvedConfYamlPath = sclangConfYaml;
 
         let env = process.env;
         env['SCLANG_LSP_ENABLE'] = '1';
@@ -236,6 +259,7 @@ export class SuperColliderContext implements Disposable, EvaluationDelegate, Com
             this.sclangProcess.kill();
         }
         this.sclangProcess = null;
+        this.setState('stopped');
     }
 
     async cleanup() {
@@ -247,8 +271,8 @@ export class SuperColliderContext implements Disposable, EvaluationDelegate, Com
     };
 
     dispose() {
-        // Clean up event emitter
         this._outputEventEmitter.dispose();
+        this._stateChangeEmitter.dispose();
         this.stopClient();
         this.deactivate();
     }
@@ -334,6 +358,7 @@ export class SuperColliderContext implements Disposable, EvaluationDelegate, Com
                     let writer = new UDPMessageWriter(socket, writerPort, lspAddress);
 
                     that.waitingForBoot = true;
+                    that.setState('starting');
                     let sclangProcess = that.sclangProcess = await that.createProcess(readerPort, writerPort);
 
                     if (!sclangProcess) {
@@ -353,6 +378,7 @@ export class SuperColliderContext implements Disposable, EvaluationDelegate, Com
 
                             if (string.indexOf('***LSP READY***') != -1) {
                                 that.waitingForBoot = false;
+                                that.setState('running');
                                 res(streamInfo);
                             }
                         })
@@ -365,7 +391,6 @@ export class SuperColliderContext implements Disposable, EvaluationDelegate, Com
 
                             reader.dispose();
                             writer.dispose();
-                            that.disposeProcess();
                         })
                         .on('error', async (err) => {
                             // Emit error event
@@ -561,11 +586,26 @@ export class SuperColliderContext implements Disposable, EvaluationDelegate, Com
             await this.client.start();
         }
 
+        // Extract custom data from the server's initialize result
+
+        const sclangConfig = this.client.initializeResult.sclang;
+        if (sclangConfig) {
+            this.serverConfYamlPath = sclangConfig.confPath ?? null;
+            this.serverIncludePaths = sclangConfig.includes ?? [];
+            this.serverExcludePaths = sclangConfig.excludes ?? [];
+            this.sclangVersion = sclangConfig.version ?? "?"
+            this.sclangArgs = sclangConfig.argv ?? [];
+            this.startupFiles = sclangConfig.startupFiles ?? [];
+        }
+
         // Use the emitter instead of direct outputChannel access
         this._outputEventEmitter.fire({
             text: `Starting SuperCollider Language Server (sessionId = ${vscode.env.sessionId})\n`,
             source: 'vscode'
         });
+
+        // Fire state change to trigger panel re-render with server data
+        this._stateChangeEmitter.fire(this._state);
     }
 
     async stopClient(processDied = false) {
