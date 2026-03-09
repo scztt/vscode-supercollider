@@ -12,7 +12,7 @@ import { getSclangPath } from './util/sclang';
 import { ServerStatusBar } from './ServerStatusBar';
 import { ControlPanel } from './ControlPanel';
 import { SuperColliderFormatter } from './providers/FormattingProvider';
-import { SuperColliderMcpServer } from './mcp/server';
+import { startMcpServer, getMcpServer } from './mcp/server';
 
 export const internalCommands = [
     'supercollider.internal.bootServer',
@@ -70,8 +70,6 @@ export async function activate(context: vscode.ExtensionContext) {
         vscode.languages.registerDocumentFormattingEditProvider({ language: 'supercollider' }, formatter);
     }
 
-    let mcpServer: SuperColliderMcpServer | null = null;
-
     const doActivate = async () => {
         try {
             if (!supercolliderContext) {
@@ -83,18 +81,10 @@ export async function activate(context: vscode.ExtensionContext) {
             await supercolliderContext.activate(outputChannel, context.globalState);
             await supercolliderContext.startClient();
 
-            // Start MCP server if enabled
-            const mcpEnabled = workspace.getConfiguration().get<boolean>('supercollider.mcp.enabled', false);
-            if (mcpEnabled) {
-                const mcpPort = workspace.getConfiguration().get<number>('supercollider.mcp.port', 22123);
-                try {
-                    mcpServer = new SuperColliderMcpServer(supercolliderContext);
-                    await mcpServer.start(mcpPort);
-                    outputChannel.appendLine(`MCP server started on port ${mcpPort}`);
-                } catch (err) {
-                    outputChannel.appendLine(`Failed to start MCP server: ${err}`);
-                }
-            }
+            sclangInfoPanel.setContext(supercolliderContext);
+
+            // Wire up the MCP server to sclang now that it's ready
+            getMcpServer()?.setContext(supercolliderContext);
 
             help.activate();
             supercolliderContext.client.onNotification('supercollider/serverStatus', (data) => {
@@ -273,6 +263,12 @@ export async function activate(context: vscode.ExtensionContext) {
         }));
 
     context.subscriptions.push(vscode.commands.registerCommand(
+        'supercollider.startMcpServer',
+        async () => {
+            await startMcpServer(outputChannel);
+        }));
+
+    context.subscriptions.push(vscode.commands.registerCommand(
         'supercollider.searchHelp',
         async () => {
             if (!supercolliderContext?.client?.isRunning()) {
@@ -284,6 +280,14 @@ export async function activate(context: vscode.ExtensionContext) {
 
     context.subscriptions.push(serverStatusBar.getStatusBarItem());
     serverStatusBar.updateStatusBar({ running: false, unresponsive: false, avgCPU: 0, peakCPU: 0, numUGens: 0, numSynths: 0, numGroups: 0, numSynthDefs: 0 });
+
+    // Start MCP server early so it's available when Claude Code connects.
+    // sclang context is wired up later in doActivate() — tools will return
+    // a helpful error if called before sclang is ready.
+    const mcpEnabled = workspace.getConfiguration().get<boolean>('supercollider.mcp.enabled', false);
+    if (mcpEnabled) {
+        startMcpServer(outputChannel);
+    }
 
     doActivate();
 
