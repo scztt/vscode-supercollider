@@ -7,8 +7,8 @@ export interface NumericSpec {
   displayName?: string; // Optional display name for the control
 }
 
-export interface StringSpec {
-  type: 'string';
+export interface TextSpec {
+  type: 'text';
   displayName?: string; // Optional display name for the control
   displayPropertyName?: boolean; // Whether to show the property name (default: true)
 }
@@ -27,7 +27,7 @@ export interface PopupSpec {
   items: string[]; // List of items to show in the popup
 }
 
-export type ControlSpec = NumericSpec | StringSpec | ActionSpec | PopupSpec;
+export type ControlSpec = NumericSpec | TextSpec | ActionSpec | PopupSpec;
 
 export interface Control {
   path: string[]; // Path segments like ["audio", "oscillators", "freq"]
@@ -78,13 +78,13 @@ export class ControlItem extends vscode.TreeItem {
       // Don't set icon for string controls
 
       // For string controls that don't display property name, use the content as the label
-      if (control.spec.type === 'string' && control.spec.displayPropertyName === false) {
+      if (control.spec.type === 'text' && control.spec.displayPropertyName === false) {
         this.label = this.getStringContentForLabel(control.value as string);
         this.description = '';
       }
 
       // Add tooltip for string controls with full markdown content
-      if (control.spec.type === 'string') {
+      if (control.spec.type === 'text') {
         this.tooltip = new vscode.MarkdownString(control.value as string);
       }
     } else {
@@ -99,7 +99,7 @@ export class ControlItem extends vscode.TreeItem {
       return control.displayValue || String(control.value);
     } else if (control.spec.type === 'popup') {
       return String(control.value || '');
-    } else if (control.spec.type === 'string' && typeof control.value === 'string') {
+    } else if (control.spec.type === 'text' && typeof control.value === 'string') {
       // Don't show description if displayPropertyName is false (content will be in label)
       if (control.spec.displayPropertyName === false) {
         return '';
@@ -254,7 +254,7 @@ export class ControlPanelProvider implements vscode.TreeDataProvider<ControlItem
           path: ['info', 'status'],
           spec: {
             displayName: 'System Status',
-            type: 'string',
+            type: 'text',
             displayPropertyName: true
           },
           value: '**System Online**\n\nAll systems operational.'
@@ -329,6 +329,7 @@ export class ControlPanelProvider implements vscode.TreeDataProvider<ControlItem
   }
 
   getChildren(element?: ControlItem): Thenable<ControlItem[]> {
+    console.log(`ControlPanel: getChildren() called for ${element?.path?.join('/') ?? 'ROOT'}`);
     if (!element) {
       // Return root categories sorted by order
       const items: ControlItem[] = [];
@@ -781,7 +782,7 @@ export class ControlDetailWebviewProvider implements vscode.WebviewViewProvider 
 
   private getStringControlHtml(control: Control): string {
     const value = control.value as string;
-    const shouldShowName = control.spec.type === 'string' && control.spec.displayPropertyName !== false;
+    const shouldShowName = control.spec.type === 'text' && control.spec.displayPropertyName !== false;
 
     // Use marked library for markdown rendering
     let renderedHtml: string;
@@ -1537,7 +1538,7 @@ export class ControlDetailWebviewProvider implements vscode.WebviewViewProvider 
           </div>
         </div>`;
 
-      } else if (control.spec.type === 'string') {
+      } else if (control.spec.type === 'text') {
         const value = String(control.value);
         // Convert markdown to HTML using marked library
         let finalHtml: string;
@@ -2231,7 +2232,7 @@ export class ControlPanel {
           'Direct value editing not implemented. Use the slider or drag controls.'
         );
       }
-    } else if (control.spec.type === 'string') {
+    } else if (control.spec.type === 'text') {
       // For string controls, show them in a preview
       const markdownString = new vscode.MarkdownString(currentValue as string);
       markdownString.isTrusted = true;
