@@ -566,7 +566,7 @@ export class SuperColliderContext implements Disposable, EvaluationDelegate, Com
         this.subscriptions.forEach((d) => {
             d.dispose();
         });
-        this.subscriptions.slice(0, 0);
+        this.subscriptions.length = 0;
 
         this.client.dispose();
         this.client = null;
