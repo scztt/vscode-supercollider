@@ -263,6 +263,10 @@ export class SuperColliderContext implements Disposable, EvaluationDelegate, Com
         this._stateChangeEmitter.dispose();
         this.stopClient();
         this.deactivate();
+
+        this.globalState = null;
+        this.outputChannel = null;
+        this.client = null;
     }
 
     initializationOptions(configuration: vscode.WorkspaceConfiguration) {
@@ -560,16 +564,12 @@ export class SuperColliderContext implements Disposable, EvaluationDelegate, Com
         this.serverPorts?.dispose();
         this.serverPorts = null;
 
-        this.globalState = null;
-        this.outputChannel = null;
-
         this.subscriptions.forEach((d) => {
             d.dispose();
         });
         this.subscriptions.length = 0;
 
         this.client.dispose();
-        this.client = null;
     }
 
     async startClient() {
