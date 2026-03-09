@@ -292,6 +292,7 @@ export async function activate(context: vscode.ExtensionContext) {
     if (mcpEnabled) {
         startMcpServer(outputChannel);
     }
+    context.subscriptions.push({ dispose: () => getMcpServer()?.dispose() });
 
     doActivate();
 

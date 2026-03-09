@@ -558,5 +558,7 @@ export class SuperColliderMcpServer {
 
     dispose() {
         this.outputDisposable?.dispose();
+        this.outputDisposable = null;
+        this.server?.stop().catch(() => {});
     }
 }
