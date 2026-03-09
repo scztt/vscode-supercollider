@@ -8,6 +8,7 @@
   - ~environment variables
   - Def-style name completions (`Pdef(\foo)`, `Ndef(\bar)`)
   - Argument hints for method calls and constructors
+- Code hover shows Class / Method description and signature
 - Go-to-definition for classes and methods
 - Evaluate selection, line, and region with visual feedback (color-coded success/error decorations)
 - Fast evaluation of named code regions ("Evaluate region by name" command)
@@ -38,6 +39,32 @@ Code can be evaluated using the "Evaluate Region" / "Evaluate Line" commands, us
 
 The VSCode extension will use your global startup.scd file and sclang_conf.yaml file by default, but can be configured to use workspace-local sclang_conf.yaml and startup.scd files - this makes it easy to maintain different quark or startup configurations per-project.
 
+## Code blocks and evaluation
+
+Code blocks in SuperCollider are represented by open- and closed-parens on a line by themselves. In VSCode, code blocks will show up as regions - adding a commend to the open-paren line will name the region in VSCode:
+```
+( // SYNTHDEFS
+)
+```
+
+Use Cmd+Shift+O to fast-navigate between code blocks.
+
+The "Evaluate Regions By Name" command will show a list of all code blocks in the current file.
+Single or multiple code blocks can be selected and evaluated. This does not affect cursor or scroll position, so it can easily be used to evaluate code blocks that are not visible, or to evaluate a sequence of code blocks without doing the "Cmd+Enter" dance.
+
+## Workspace management
+
+Workspace specific startup and sclang_conf.yaml files can be enabled in Settings. Local and/or global startup files will be run on sclang launch depending on settings - global is always run first.
+
+Local startup files allow for project-specific startup code - this is helpful for server settings,  pre-loading audio files or SynthDefs. 
+
+Local sclang_conf.yaml files allow for project-specific quark and classpath settings. This is helpful for managing dependencies on a per-project basis.
+
+## Environment / "Xdef" visibility
+
+The language server is aware of environment variables, as well as "XDef" style globlal registries like `Ndef`, `OSCdef`, `Pdef`, etc. It will show hover info for these values, and should auto-complete to known definitions.
+
+The `isDefClass` and `prGetNames` methods on a given class determine if it shows up as a "global registry" class. Providing these methods for a new class allows it to provide auto-completion and hover into for its registered values (see existing definitions of `prGetNames`).
 
 ## Experimental Features
 
@@ -49,7 +76,7 @@ Browse SuperCollider class and method documentation directly inside VS Code. A l
 
 ### Control Panel
 
-A sidebar panel (in the SuperCollider activity bar) that displays interactive controls exposed by your SuperCollider code. Supports numeric sliders, buttons, popup menus, and hierarchical grouping. Useful for live-tweaking synth parameters without writing code. See "Language Client Controls.scd" example in the LanguageServer quark.
+A sidebar panel (in the SuperCollider activity bar) that displays interactive controls exposed by your SuperCollider code. Supports numeric sliders, buttons, popup menus, and hierarchical grouping. Useful for live-tweaking synth parameters without writing code. See "Control Panel Example.scd" example in the LanguageServer quark.
 
 ### sclang Info Panel
 
