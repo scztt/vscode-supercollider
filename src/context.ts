@@ -149,6 +149,7 @@ export class SuperColliderContext implements Disposable, EvaluationDelegate, Com
     serverPorts: ServerPortRange | null;
     activated: boolean = false;
     waitingForBoot: boolean = false;
+    private _restarting: boolean = false;
     liveshareGuestProxy: LiveshareGuestProxy;
     liveshareHost: LiveshareHost;
     commandDelegate: CommandDelegate;
@@ -432,8 +433,6 @@ export class SuperColliderContext implements Disposable, EvaluationDelegate, Com
         };
 
         this.client = new LanguageClient('SuperColliderLanguageServer', 'SuperCollider Language Server', serverOptions, clientOptions, true);
-        this.subscriptions.push(this.client);
-
         const evaluateSelectionFeature = new EvaluateSelectionFeature(this.client, this, this);
         this.client.registerFeature(evaluateSelectionFeature);
         this.subscriptions.push(evaluateSelectionFeature);
@@ -613,16 +612,17 @@ export class SuperColliderContext implements Disposable, EvaluationDelegate, Com
     }
 
     async restart() {
-        if (this.client.state == State.Starting) {
-            const outputChannel = this.outputChannel;
-            const globalState = this.globalState;
-            await this.deactivate();
-            await this.activate(outputChannel, globalState);
-            await this.startClient();
+        if (this._restarting) {
+            vscode.window.showWarningMessage('SuperCollider is already restarting');
+            return;
+        }
 
-        } else {
+        this._restarting = true;
+        try {
             await this.stopClient();
             await this.startClient();
+        } finally {
+            this._restarting = false;
         }
     }
 
