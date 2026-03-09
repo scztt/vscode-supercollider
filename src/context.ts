@@ -8,13 +8,9 @@ import {
 } from 'vscode';
 import {
     ExecuteCommandRequest,
-    FoldingRangeProviderMiddleware,
-    FoldingRangeRequest,
     LanguageClient,
     LanguageClientOptions,
     MessageTransports,
-    ProvideCodeLensesSignature,
-    ProvideFoldingRangeSignature,
     ServerOptions,
     State,
     TextDocumentIdentifier
@@ -69,7 +65,7 @@ class ServerPortRange implements Disposable {
         } else {
             this.start = this.findFreePort(allocations.map(a => a.port));
             allocations.push({ port: this.start, updatedAt: Date.now(), instanceId: this.instanceId });
-    }
+        }
 
         this.setAllocations(allocations);
         this.heartbeatTimer = setInterval(() => this.heartbeat(), heartbeatIntervalMs);
@@ -405,7 +401,7 @@ export class SuperColliderContext implements Disposable, EvaluationDelegate, Com
                             reader.dispose();
                             writer.dispose()
                             if (that.sclangProcess === sclangProcess) {
-                            that.disposeProcess();
+                                that.disposeProcess();
                             }
                         });
 
@@ -413,7 +409,7 @@ export class SuperColliderContext implements Disposable, EvaluationDelegate, Com
                         reader.dispose();
                         writer.dispose()
                         if (that.sclangProcess === sclangProcess) {
-                        that.disposeProcess();
+                            that.disposeProcess();
                         }
                     });
 
