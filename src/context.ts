@@ -260,11 +260,23 @@ export class SuperColliderContext implements Disposable, EvaluationDelegate, Com
     }
 
     dispose() {
+        // Sync-only fallback if deactivate() wasn't called (or didn't finish)
+        if (this.activated) {
+            this.activated = false;
+            this.disposeProcess();
+            // Can't await — fire and forget
+            this.client?.dispose(0);
+            for (const d of this.subscriptions) {
+                d.dispose();
+            }
+            this.subscriptions.length = 0;
+        }
+
+        // Final resource cleanup
+        this.serverPorts?.dispose();
+        this.serverPorts = null;
         this._outputEventEmitter.dispose();
         this._stateChangeEmitter.dispose();
-        this.stopClient();
-        this.deactivate();
-
         this.globalState = null;
         this.outputChannel = null;
         this.client = null;
@@ -560,15 +572,18 @@ export class SuperColliderContext implements Disposable, EvaluationDelegate, Com
 
         this.activated = false;
 
-        this.serverPorts?.dispose();
-        this.serverPorts = null;
+        // Graceful async teardown
+        this.disposeProcess();
+        await this.stopClient(true);
 
-        this.subscriptions.forEach((d) => {
+        // Dispose subscriptions (features, liveshare, commands)
+        for (const d of this.subscriptions) {
             d.dispose();
-        });
+        }
         this.subscriptions.length = 0;
 
-        this.client.dispose();
+        this.serverPorts?.dispose();
+        this.serverPorts = null;
     }
 
     async startClient() {
