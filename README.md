@@ -1,41 +1,95 @@
 # SuperCollider Extension for VS Code
 
 ## Features
-- Limited syntax highlighting
-- Limited code completion, including:
-  - Regular method completions like `foo.bar`
-  - Class method completions like `Foo.bar`
-  - ~~Environment variable references like `~envir`~~ (broken right now)
-  - Names of def-style references like `Pdef(\foo` or `Ndef(\bar`
+
+- Syntax highlighting for `.sc`, `.scd`, and `.schelp` files
+- Code completion:
+  - Method completions (`foo.bar`, `Foo.bar`)
+  - ~environment variables
+  - Def-style name completions (`Pdef(\foo)`, `Ndef(\bar)`)
   - Argument hints for method calls and constructors
-- Go-todefinition for classes and methods
-- Evaluate selection, line, and region
-- Decorations and notifications to show successful/failed execution
+- Go-to-definition for classes and methods
+- Evaluate selection, line, and region with visual feedback (color-coded success/error decorations)
+- Fast evaluation of named code regions ("Evaluate region by name" command)
+- Server status bar with real-time CPU, UGen, Synth, and Group counts
+- Per-workspace sclang instances with independent server ports
+- Drag-and-drop file path insertion
+- Optional code formatting via `sclang-format`
 
 # How to Install
 
 1. Download SuperCollider **3.14.0 or later**.
+    https://supercollider.github.io/downloads
 
-2. Download the .vsix file from the latest release:
+2. Download the `.vsix` file from the latest release:
     https://github.com/scztt/vscode-supercollider/releases
 
-3. Install the extension in vscode (from the command palette: "Extensions: Install from VSIX...")
+3. Install the extension in VSCode (from the command palette: "Extensions: Install from VSIX..."). Restart VSCode or "Developer: Reload window".
+ 
+4. Install the LanguageServer.quark - from the VSCode command palette, choose "SuperCollider: Update LanguageServer.quark" - or run `Quarks.install("https://github.com/scztt/LanguageServer.quark")` from the legacy SC IDE.
 
-4. In your user settings (from the command palette: "Preferences: Open User Settings"), search for SuperCollider.
-   Set the following settings:
-   
-    **Supercollider › Sclang: Cmd** 
-   
-   The path to your sclang executable (e.g. `/Applications/SuperCollider.app/Contents/MacOS/sclang` on mac or `C:\Program Files\SuperCollider\sclang.exe` on windows)
+5. For common install scenarios on Windows and Mac, vscode will automatically find the sclang executable. You may be prompted on first launch to locate it yourself. The path to the sclang executable can be set using the `Supercollider > Sclang: Cmd` setting.
 
-   **Supercollider › Sclang: Conf Yaml** 
-   
-   The path to your conf.yaml file - you can find this in the current SuperCollider IDE in Preferences -> Interpreter -> Active Config File. You can also create an empty `.yaml` in a location of your choiuce and point to that.
+# Usage
 
-5. Install the LanguageServer.quark - from the VSCode command palette, choose "SuperCollider: Update LanguageServer.quark". 
-  **NOTE**: Installing the LanguageServer.quark will conflict with using the built-in SCIde. See the note below for a workaround.
+The extension will activate when you open a workspace with `.sc` or `.scd` files. A unique sclang executable process will be launched for each workspace. The output from sclang is visible in the "Output" panel, under the "SuperCollider" drop-down.
 
-6. Open a project folder containing .scd or .sc files! Most existing IDE commands are available in VSCode, you can find them by searching for "SuperCollider" from the command palette. Some are already mapped to the expecte keyboard shortcuts (e.g. Cmd+Enter and Cmd+Period), some are not (you can use the gear icon next to the command to set keyboard shortcuts).
+Code can be evaluated using the "Evaluate Region" / "Evaluate Line" commands, using the normal Command / Ctrl / Shift + Enter shortcuts. These can be reconfigured with the gear icon next to the commands in the VSCode palette.
+
+The VSCode extension will use your global startup.scd file and sclang_conf.yaml file by default, but can be configured to use workspace-local sclang_conf.yaml and startup.scd files - this makes it easy to maintain different quark or startup configurations per-project.
+
+
+## Experimental Features
+
+*These features are experimental — they are unstable, and may or may not ever reach release quality.*
+
+### In-Editor Help System
+
+Browse SuperCollider class and method documentation directly inside VS Code. A local help server renders `.schelp` files in a webview panel that matches your editor theme. Use the **"SuperCollider: Search Help"** command to look up any class or topic
+
+### Control Panel
+
+A sidebar panel (in the SuperCollider activity bar) that displays interactive controls exposed by your SuperCollider code. Supports numeric sliders, buttons, popup menus, and hierarchical grouping. Useful for live-tweaking synth parameters without writing code. See "Language Client Controls.scd" example in the LanguageServer quark.
+
+### sclang Info Panel
+
+A sidebar panel showing the current state of the sclang process: running/stopped status, sclang version, binary path, command-line arguments, startup files, and `sclang_conf.yaml` include/exclude paths. Helpful for diagnosing configuration issues.
+
+### LiveShare Coop Mode
+
+Allows VS Code LiveShare guests to evaluate SuperCollider code on the host machine in real time. In this mode, code evaluation from all LiveShare participants is sent to the host sclang process. This enables several users editing, evaluating code, and playing sound on a single machine remotely. **IMPORTANT: This allows LiveShare participants to execute arbitrary code on your machine. Invite only trusted collaborators!**. Enable this feature with the `supercollider.enableLiveShareCoop` setting. 
+To see users names and improve functionality, create a file at `~/.vs-liveshare-settings.json` that contains this:
+```
+{
+    "extensionPermissions": {
+        "ScottCarver.vscode-supercollider": [
+            "shareServices",
+            "readUserProfile"
+        ]
+    }
+}
+```
+
+Then:
+- When you start hosting a LiveShare session, you will be asked to enable Co-op mode. Choosing "No" here will start a regular non-Co-op session, where guests cannot execute code.
+- When users join your LiveShare session, they will be asked if they want to enable Co-op mode. If they choose "Yes", SuperCollider actions will be re-routed to your VSCode instance. Behavior for the will appear identical to a normal VSCode SC session, though they will not e.g. hear sound.
+
+
+### MCP Server
+
+An [MCP](https://modelcontextprotocol.io/) server that exposes SuperCollider to AI tools like Claude. Provides tools for evaluating code, browsing help documentation, inspecting the server node tree, and controlling the audio server. MCP's are unique per-workspace, as they allow a Claude instance to interact directly with a specific sclang instance.
+
+To enable:
+- Enable `supercollider.mcp.enabled` setting
+- When setting up MCP for a workspace for the first time, run **"SuperCollider: Start MCP Server"** command.
+
+This will create an `.mcp.json` settings file in the workspace, that directs LLM's like Claude to your local MCP server. You may need to reload the window on the first attempt. Currently, the MCP server provides:
+- code evaluation
+- class / method lookup
+- help documentation lookup
+- server boot / node tree inspection
+
+In particular, the MCP's code evaluation has trouble with async operations, but usually Claude etc can work around by reading the post window.
 
 # Development
 
@@ -53,37 +107,24 @@
     npm install
     ```
 
-3. Install LanguageServer.quark
-   
-    ```
+3. Install LanguageServer.quark:
+
+    ```supercollider
     // (in SuperCollider...)
-    Quarks.install("/path/to/vscode-supercollider/LanaguageServer.quark")
+    Quarks.install("https://github.com/scztt/LanguageServer.quark")
     ```
 
 ## How to run
 
-1. Open `vscode-supercollider` folder in vscode.
-2. Before first launch / when changing .ts files: `Run: Build Task -> tsc:build`
-3. To launch a debug environment, `Debug: Start Debugging`.
+1. Open the `vscode-supercollider` folder in VSCode.
+2. Before first launch / when changing `.ts` files: `Run: Build Task -> tsc:build`
+3. To launch a debug environment: `Debug: Start Debugging`
 4. On first launch of the debug environment:
    - Configure the extension settings in `Preferences: Open Settings (UI)`, search for SuperCollider
-   - sclang path and sclang_conf path are required settings - these can be found in the ScIDE Preferences dialog
-
-# Usage
-
-- One `sclang` process will launch per workspace, any time an `.sc` / `.scd` file is opened.
-- Process output can be viewed in Output window, by selecting "supercollider"
-- Several commands are defined for SuperCollider contexts - these are visible in the command palette (Cmd+P) by searching for SuperCollider. Remember that you can set keyboard shortcut commands for these to replicate the ScIDE experience.
+   - sclang path is required; sclang_conf path is optional
 
 # Bugs / Feature requests
 
-Please report bugs or feature requests on the GitHub issues page for the extension:
+Please report bugs or feature requests on the GitHub issues page:
 https://github.com/scztt/vscode-supercollider
 
-# Error: duplicate Class found: 'Document'
-
-The LanguageServer Quark provides a Document class that replaces the built-in one that is provided by SCIDE. Unfortunately, both Document classes cannot be installed at once, which means that installing the LanguageServer quark will cause compile errors in SCIDE. To resolve this:
-1. Make a copy of your `sclang_conf.yaml` file, e.g. `sclang_conf_vscode.yaml` - you can find the location in the SCIDE preferences.
-2. In VSCode's settings, find the "Path to sclang_conf.yaml" setting - point this path to your new yaml file.
-3. Quark will be installed separately to one of the two yaml files, depending on which IDE you are using - remember that if you're switching between IDE's, you'll need to install quarks separately in each.|
-This problem will be resolved in the future, see https://github.com/users/scztt/projects/1?pane=issue&itemId=3131661
