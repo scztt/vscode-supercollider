@@ -582,7 +582,7 @@ export class SuperColliderContext implements Disposable, EvaluationDelegate, Com
 
         // Extract custom data from the server's initialize result
 
-        const sclangConfig = this.client.initializeResult.sclang;
+        const sclangConfig = this.client.initializeResult?.sclang;
         if (sclangConfig) {
             this.serverConfYamlPath = sclangConfig.confPath ?? null;
             this.serverIncludePaths = sclangConfig.includes ?? [];
@@ -608,7 +608,13 @@ export class SuperColliderContext implements Disposable, EvaluationDelegate, Com
             return;
         }
 
-        await this.client.stop(processDied ? 0 : 2000);
+        if (processDied) {
+            // Process is already dead — client.stop() will timeout trying to
+            // send LSP shutdown to a dead connection. Catch and ignore.
+            try { await this.client.stop(0); } catch {}
+        } else {
+            await this.client.stop(2000);
+        }
     }
 
     async restart() {
@@ -619,7 +625,8 @@ export class SuperColliderContext implements Disposable, EvaluationDelegate, Com
 
         this._restarting = true;
         try {
-            await this.stopClient();
+            const processDied = this.sclangProcess === null;
+            await this.stopClient(processDied);
             await this.startClient();
         } finally {
             this._restarting = false;
