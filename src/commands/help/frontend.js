@@ -27,20 +27,18 @@ addEventListener("load", function (event) {
         }
     }
 
-    // Hijack copy buttons in code views — clipboard API doesn't work in webviews.
-    // Replace with "open in editor" arrow that sends code to VS Code as a new .scd document.
+    // Hijack code view buttons:
+    // - Copy button: keep original icon, but open code in VS Code editor instead
+    // - Play button: new button, evaluates selected code (or all) in sclang
     document.querySelectorAll('.codeMirrorContainer').forEach(function(container) {
         var button = container.querySelector('.copy-button');
         var editor = container.querySelector('.editor');
         if (!button || !editor) return;
 
-        // Replace icon with left arrow
-        button.innerHTML = '<span style="font-size:16px; color: var(--color-cm-comment); display:block; width:20px; height:20px; line-height:20px; text-align:center;">\u21e6</span>';
-        button.title = 'Open in editor';
-
-        // Remove old listeners by cloning
+        // Replace copy button click handler (keep original icon)
         var newButton = button.cloneNode(true);
         button.parentNode.replaceChild(newButton, button);
+        newButton.title = 'Open in editor';
 
         newButton.addEventListener('click', function(e) {
             e.preventDefault();
@@ -48,6 +46,26 @@ addEventListener("load", function (event) {
             window.parent.postMessage({
                 command: 'open-code',
                 code: editor.value
+            }, '*');
+        });
+
+        // Add play button next to copy button
+        var playButton = document.createElement('button');
+        playButton.className = 'copy-button vsc-play-button';
+        playButton.title = 'Evaluate in SuperCollider';
+        playButton.innerHTML = '<span class="copy-ico" style="opacity:1;visibility:visible;">\u25B6</span>';
+        container.appendChild(playButton);
+
+        playButton.addEventListener('click', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            // Get selection from CodeMirror instance, or fall back to full text
+            var cm = editor.editor;
+            var code = (cm && cm.getSelection()) || '';
+            if (!code) code = editor.value;
+            window.parent.postMessage({
+                command: 'evaluate-code',
+                code: code
             }, '*');
         });
     });

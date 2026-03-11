@@ -108,6 +108,15 @@ a.vsc-nav-arrow:hover {
     background: var(--vscode-input-background) !important;
 }
 
+.vsc-play-button {
+    right: 34px !important;
+}
+
+.codeMirrorContainer:hover .vsc-play-button .copy-ico {
+    opacity: 1;
+    visibility: visible;
+}
+
 .CodeMirror-selected,
 .CodeMirror-line::selection,
 .CodeMirror-line > span::selection,

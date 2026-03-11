@@ -99,7 +99,7 @@ To see users names and improve functionality, create a file at `~/.vs-liveshare-
 
 Then:
 - When you start hosting a LiveShare session, you will be asked to enable Co-op mode. Choosing "No" here will start a regular non-Co-op session, where guests cannot execute code.
-- When users join your LiveShare session, they will be asked if they want to enable Co-op mode. If they choose "Yes", SuperCollider actions will be re-routed to your VSCode instance. Behavior for the will appear identical to a normal VSCode SC session, though they will not e.g. hear sound.
+though they will not e.g. hear sound.
 
 
 ### MCP Server

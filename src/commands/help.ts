@@ -95,8 +95,11 @@ function makeHTML(path: string, port: number) {
                         vscode.postMessage(event.data)
                         } else if (event.data.command == 'open-code') {
                             vscode.postMessage(event.data)
+                        } else if (event.data.command == 'evaluate-code') {
+                            vscode.postMessage(event.data)
                         } else if (event.data.command == 'navigate') {
                             vscode.setState({ helpPath: event.data.path });
+                            vscode.postMessage(event.data);
                         } else if (event.data.command == 'keyboard-rebroadcast') {
                             const type = event.data.type;
                             delete event.data.type;
@@ -175,18 +178,33 @@ async function searchHelpInActiveDocument(context: SuperColliderContext) {
 function setupHelpPanel(panel: vscode.WebviewPanel, helpPath: string) {
     panel.webview.html = makeHTML(helpPath, serverPort!);
     helpPanels.push(panel);
+    let currentHelpPath = helpPath;
     panel.onDidDispose(() => {
         helpPanels = helpPanels.filter(p => p !== panel);
     });
     panel.webview.onDidReceiveMessage(
         (message) => {
             switch (message.command) {
+                case 'navigate': {
+                    currentHelpPath = message.path;
+                    break;
+                }
                 case 'open-local-file': {
                     vscode.workspace.openTextDocument(url.fileURLToPath(message.href)).then(doc => { vscode.window.showTextDocument(doc, vscode.ViewColumn.One); }, (err) => { vscode.window.showErrorMessage(err); });
                     break;
                 }
                 case 'open-code': {
                     vscode.workspace.openTextDocument({ content: message.code, language: 'supercollider' }).then(doc => { vscode.window.showTextDocument(doc, vscode.ViewColumn.One); });
+                    break;
+                }
+                case 'evaluate-code': {
+                    if (helpContext && message.code) {
+                        const helpFileUrl = lastRootUri
+                            ? url.pathToFileURL(url.fileURLToPath(lastRootUri + '/' + currentHelpPath)).href
+                            : 'untitled:help-eval';
+                        const doc: TextDocumentIdentifier = { uri: helpFileUrl };
+                        helpContext.doEvaluate(doc, message.code, 'help');
+                    }
                     break;
                 }
             }
@@ -295,9 +313,9 @@ async function launchServer(rootUri): Promise<void> {
                         // On-demand rendering: ask sclang to render .html help files before serving
                         if (extname === '.html' && helpContext) {
                             try {
-                                const helpFileUrl = "file:/" + filePath;
+                                const helpFileUrl = url.pathToFileURL(filePath).href;
                                 const scCode = `SCDoc.prepareHelpForURL(URI(${JSON.stringify(helpFileUrl)}))`;
-                                const doc: TextDocumentIdentifier = { uri: 'untitled:help-render' };
+                                const doc: TextDocumentIdentifier = { uri: helpFileUrl };
                                 await helpContext.doEvaluate(doc, scCode, 'help');
                             } catch (e) {
                                 console.error('Help on-demand render failed, serving from disk:', e);
