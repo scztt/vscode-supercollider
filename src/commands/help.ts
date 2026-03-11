@@ -203,7 +203,7 @@ function setupHelpPanel(panel: vscode.WebviewPanel, helpPath: string) {
                             ? url.pathToFileURL(url.fileURLToPath(lastRootUri + '/' + currentHelpPath)).href
                             : 'untitled:help-eval';
                         const doc: TextDocumentIdentifier = { uri: helpFileUrl };
-                        helpContext.doEvaluate(doc, message.code, 'help');
+                        helpContext.doEvaluate(doc, message.code, null);
                     }
                     break;
                 }
@@ -320,7 +320,7 @@ async function launchServer(rootUri): Promise<void> {
                                 const helpFileUrl = url.pathToFileURL(filePath).href;
                                 const scCode = `SCDoc.prepareHelpForURL(URI(${JSON.stringify(helpFileUrl)}))`;
                                 const doc: TextDocumentIdentifier = { uri: helpFileUrl };
-                                await helpContext.doEvaluate(doc, scCode, 'help');
+                                await helpContext.doEvaluate(doc, scCode, null);
                             } catch (e) {
                                 console.error('Help on-demand render failed, serving from disk:', e);
                             }

@@ -62,6 +62,11 @@
                         "default": "> ",
                         "description": "Format string for evaluated code result"
                     },
+                    "supercollider.sclang.guestEvaluateResultPrefix": {
+                        "type": "string",
+                        "default": "[%|> ",
+                        "description": "Format string for evaluated code result"
+                    },
                     "supercollider.sclang.formatterCmd": {
                         "type": "string",
                         "default": "",
