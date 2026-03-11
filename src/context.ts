@@ -656,8 +656,11 @@ export class SuperColliderContext implements Disposable, EvaluationDelegate, Com
             await this.startClient();
         } catch (e) {
             const message = e instanceof Error ? e.message : String(e);
-            vscode.window.showErrorMessage(message);
-            throw e;
+            const choice = await vscode.window.showErrorMessage(message, 'Retry');
+            if (choice === 'Retry') {
+                this._restarting = false;
+                return this.restart();
+            }
         } finally {
             this._restarting = false;
         }
