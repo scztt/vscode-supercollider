@@ -56,10 +56,10 @@ addEventListener("load", function (event) {
         playButton.innerHTML = '<span class="copy-ico" style="opacity:1;visibility:visible;">\u25B6</span>';
         container.appendChild(playButton);
 
-        playButton.addEventListener('click', function(e) {
+        // Use mousedown: CM's blur handler clears selection before click fires
+        playButton.addEventListener('mousedown', function(e) {
             e.preventDefault();
             e.stopPropagation();
-            // Get selection from CodeMirror instance, or fall back to full text
             var cm = editor.editor;
             var code = (cm && cm.getSelection()) || '';
             if (!code) code = editor.value;
