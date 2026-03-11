@@ -1,4 +1,14 @@
 .vscode/**
 .vscode-test/**
 .gitignore
+.git/**
+.claude/**
+.mcp.json
+src/**
+tsconfig.json
 vsc-extension-quickstart.md
+_capture/**
+models/**
+*.vsix
+**/*.ts
+**/*.map

@@ -8,6 +8,7 @@ import {
     workspace
 } from 'vscode';
 import * as vscodelc from 'vscode-languageclient/node';
+import { TextDocumentIdentifier } from 'vscode-languageclient/node';
 
 import { SuperColliderContext } from '../context';
 
@@ -59,14 +60,20 @@ function makeHTML(path: string, port: number) {
             padding: 0;
             height: 100%;
             overflow: hidden;
-            background-color: #fff;
+            background-color: var(--vscode-sideBar-background, #fff);
         }
         iframe
         {
-            border: 0px;
+            border: 0;
+            display: block;
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            top: 0;
+            left: 0;
         }
-        </style> 
-        <iframe id="frame" src="http://127.0.0.1:${port}/${path}" width="100%" height="100%"></iframe>
+        </style>
+        <iframe id="frame" src="http://127.0.0.1:${port}/${path}"></iframe>
 
         <script>
             //# sourceURL=help.js
@@ -102,12 +109,14 @@ function makeHTML(path: string, port: number) {
                     }
                 }
                 
-                frame.onload = () => {
+                function sendInit() {
                     frame.contentWindow.postMessage({
                         command: 'init',
                         css: css
                     }, '*');
                 }
+                frame.onload = sendInit;
+                sendInit();
             };
         </script>
         `
@@ -117,10 +126,11 @@ function makeHTML(path: string, port: number) {
 
 let server = null
 let serverPort: number | null = null
-let frontend_js: string | undefined;
-let frontend_css: string | undefined;
+let helpContext: SuperColliderContext | null = null;
+let frontendCache: { js: string, css: string } | null = null;
+let helpPanels: vscode.WebviewPanel[] = [];
 
-async function searchHelpInActiveDocument(client: vscodelc.LanguageClient) {
+async function searchHelpInActiveDocument(context: SuperColliderContext) {
     const activeTextEditor = vscode.window.activeTextEditor;
     if (!activeTextEditor)
         return null;
@@ -131,7 +141,7 @@ async function searchHelpInActiveDocument(client: vscodelc.LanguageClient) {
     const searchString = activeTextEditor.document.getText(searchRange);
 
     if (searchString.length > 0) {
-        const result = await client.sendRequest(SearchHelp.type, {
+        const result = await context.client.sendRequest(SearchHelp.type, {
             searchString: searchString,
         });
 
@@ -149,6 +159,10 @@ async function searchHelpInActiveDocument(client: vscodelc.LanguageClient) {
                 enableScripts: true
             });
         helpPanel.webview.html = makeHTML(helpPath, serverPort!);
+        helpPanels.push(helpPanel);
+        helpPanel.onDidDispose(() => {
+            helpPanels = helpPanels.filter(p => p !== helpPanel);
+        });
         helpPanel.webview.onDidReceiveMessage(
             (message) => {
                 switch (message.command) {
@@ -160,15 +174,20 @@ async function searchHelpInActiveDocument(client: vscodelc.LanguageClient) {
     }
 }
 
-export async function searchHelp(client: vscodelc.LanguageClient) {
-    await searchHelpInActiveDocument(client);
+export async function searchHelp(context: SuperColliderContext) {
+    helpContext = context;
+    await searchHelpInActiveDocument(context);
 }
 
 export function activate() {
-    readFrontendFiles();
+    getFrontendFiles();
 }
 
-export function deactivate(context: SuperColliderContext) {
+export function deactivate() {
+    for (const panel of helpPanels) {
+        panel.dispose();
+    }
+    helpPanels = [];
     if (!!server) {
         server.close();
         server = null;
@@ -176,36 +195,14 @@ export function deactivate(context: SuperColliderContext) {
     }
 }
 
-function readFrontendFiles() {
-    return new Promise<[string, string]>((res, rej) => {
-        const maybeComplete = () => {
-            if (frontend_css !== undefined && frontend_js !== undefined) {
-                res([frontend_css, frontend_js])
-            }
-        }
-
-        maybeComplete();
-
-        fs.readFile(path.join(__dirname, 'help/frontend.css'), 'utf8', function (err, content) {
-            if (err) {
-                console.log('Could not find frontend.css');
-                return;
-            }
-
-            frontend_css = content;
-            maybeComplete();
-        });
-
-        fs.readFile(path.join(__dirname, 'help/frontend.js'), 'utf8', function (err, content) {
-            if (err) {
-                console.log('Could not find frontend.css');
-                return;
-            }
-
-            frontend_js = content;
-            maybeComplete();
-        });
-    });
+async function getFrontendFiles(): Promise<{ js: string, css: string }> {
+    if (frontendCache) return frontendCache;
+    const [css, js] = await Promise.all([
+        fs.promises.readFile(path.join(__dirname, 'help/frontend.css'), 'utf8'),
+        fs.promises.readFile(path.join(__dirname, 'help/frontend.js'), 'utf8'),
+    ]);
+    frontendCache = { js, css };
+    return frontendCache;
 }
 
 async function launchServer(rootUri): Promise<void> {
@@ -216,22 +213,23 @@ async function launchServer(rootUri): Promise<void> {
                     console.log('request starting...');
 
                     try {
-                        const [frontend_css, frontend_js] = await readFrontendFiles();
+                        const frontend = await getFrontendFiles();
+                        const urlPath = request.url?.replace(/^\/+/, '/') ?? '';
 
-                        if (request.url == '//frontend.css') {
-                            // custom style
+                        if (urlPath == '/frontend.css' || urlPath == '/static/frontend.css') {
                             response.writeHead(200, { 'Content-Type': 'text/css' });
-                            response.end(frontend_css, 'utf-8');
+                            response.end(frontend.css, 'utf-8');
+                            return;
                         }
 
-                        if (request.url == '//frontend.js') {
-                            // custom style
+                        if (urlPath == '/frontend.js' || urlPath == '/static/frontend.js') {
                             response.writeHead(200, { 'Content-Type': 'text/javascript' });
-                            response.end(frontend_js, 'utf-8');
+                            response.end(frontend.js, 'utf-8');
+                            return;
                         }
 
-                        var filePath = url.fileURLToPath(rootUri + request.url);
-                        if (filePath == './') {
+                        var filePath = url.fileURLToPath(rootUri + urlPath);
+                        if (urlPath == './') {
                             filePath = './index.html';
                         }
 
@@ -256,6 +254,18 @@ async function launchServer(rootUri): Promise<void> {
                             case '.wav':
                                 contentType = 'audio/wav';
                                 break;
+                        }
+
+                        // On-demand rendering: ask sclang to render .html help files before serving
+                        if (extname === '.html' && helpContext) {
+                            try {
+                                const helpFileUrl = "file:/" + filePath;
+                                const scCode = `SCDoc.prepareHelpForURL(URI(${JSON.stringify(helpFileUrl)}))`;
+                                const doc: TextDocumentIdentifier = { uri: 'untitled:help-render' };
+                                await helpContext.doEvaluate(doc, scCode, 'help');
+                            } catch (e) {
+                                console.error('Help on-demand render failed, serving from disk:', e);
+                            }
                         }
 
                         fs.readFile(filePath, function (error, content) {

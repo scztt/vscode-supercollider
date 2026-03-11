@@ -279,7 +279,7 @@ export async function activate(context: vscode.ExtensionContext) {
                 vscode.window.showWarningMessage('SuperCollider must be running to search help');
                 return;
             }
-            await help.searchHelp(supercolliderContext.client);
+            await help.searchHelp(supercolliderContext);
         }));
 
     context.subscriptions.push(serverStatusBar.getStatusBarItem());
@@ -300,6 +300,7 @@ export async function activate(context: vscode.ExtensionContext) {
 }
 
 async function deactivate() {
+    help.deactivate();
     await supercolliderContext?.deactivate();
 }
 

@@ -24,7 +24,7 @@
     "icon": "icon.png",
     "scripts": {
         "vscode:prepublish": "npm run compile",
-        "compile": "tsc -p ./",
+        "compile": "tsc -p ./ && npm run cp",
         "cp": "copyup src/commands/help/* out",
         "watch": "tsc -watch -p ./"
     },

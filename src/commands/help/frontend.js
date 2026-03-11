@@ -1,43 +1,81 @@
 addEventListener("load", function (event) {
     let oldFixTOC = window.fixTOC;
 
+    // Hook fixTOC — runs on all SC help pages (class docs, Browse, Search)
     window.fixTOC = function () {
         oldFixTOC();
 
         if (window.location !== window.parent.location) {
-            create_menubar_item("⇨", "#", (a, li) => {
-                a.href = null;
-                a.on("click", (e) => {
-                    e.preventDefault();
-                    history.forward();
-                });
-
+            create_menubar_item("\u21e8", "#", function(a, li) {
+                a.attr("href", null);
+                a.on("click", function(e) { e.preventDefault(); history.forward(); });
                 li.detach();
                 $("#nav").prepend(li);
             });
-            create_menubar_item("⇦", "#", (a, li) => {
-                a.href = null;
-                a.on("click", (e) => {
-                    e.preventDefault();
-                    history.back();
-                });
-
+            create_menubar_item("\u21e6", "#", function(a, li) {
+                a.attr("href", null);
+                a.on("click", function(e) { e.preventDefault(); history.back(); });
                 li.detach();
                 $("#nav").prepend(li);
             });
         }
-
-        document.querySelectorAll('a').forEach((a) => {
-            if (a.href.startsWith("file://")) {
-                a.addEventListener("click", function (e) {
-                    window.parent.postMessage({
-                        command: "open-local-file",
-                        href: a.href
-                    }, "*");
-                });
-            }
-        });
     }
+
+    // Intercept file:// links on all pages
+    document.querySelectorAll('a').forEach((a) => {
+        if (a.href && a.href.startsWith("file://")) {
+            a.addEventListener("click", function (e) {
+                window.parent.postMessage({
+                    command: "open-local-file",
+                    href: a.href
+                }, "*");
+            });
+        }
+    });
+
+    // Pick the SC Doc theme whose code background is closest to the VS Code editor background
+    function selectBestTheme(editorBg) {
+        var themes = {
+            'default':        '#ffffff',
+            'classic':        '#ffffff',
+            'solarizedLight': '#fdf6e3',
+            'monokai':        '#272822',
+            'dracula':        '#282a36',
+            'solarizedDark':  '#002b36',
+            'dark':           '#000000',
+        };
+
+        function parseHex(hex) {
+            hex = hex.replace('#', '');
+            if (hex.length === 3) hex = hex[0]+hex[0]+hex[1]+hex[1]+hex[2]+hex[2];
+            return [parseInt(hex.slice(0,2),16), parseInt(hex.slice(2,4),16), parseInt(hex.slice(4,6),16)];
+        }
+
+        function parseColor(str) {
+            str = (str || '').trim();
+            if (str.startsWith('#')) return parseHex(str);
+            var m = str.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
+            if (m) return [parseInt(m[1]), parseInt(m[2]), parseInt(m[3])];
+            return null;
+        }
+
+        function colorDist(a, b) {
+            var dr = a[0]-b[0], dg = a[1]-b[1], db = a[2]-b[2];
+            return dr*dr + dg*dg + db*db;
+        }
+
+        var target = parseColor(editorBg);
+        if (!target) return null;
+
+        var best = null, bestDist = Infinity;
+        for (var name in themes) {
+            var d = colorDist(target, parseHex(themes[name]));
+            if (d < bestDist) { bestDist = d; best = name; }
+        }
+        return best;
+    }
+
+    var needsReload = !localStorage.getItem('--vscode-editor-background');
 
     window.addEventListener('message', (event) => {
         switch (event.data.command) {
@@ -47,9 +85,24 @@ addEventListener("load", function (event) {
                     localStorage[key] = value;
                     document.documentElement.style.setProperty(key, value);
                 }
+                // Pick SC theme closest to VS Code editor background
+                var editorBg = styles['--vscode-editor-background'];
+                var themeName = selectBestTheme(editorBg);
+                if (themeName && typeof setTheme === 'function') {
+                    setTheme(themeName);
+                }
+                // First load ever — localStorage was empty, so scdoc.js used wrong theme.
+                // Reload now that localStorage is populated.
+                if (needsReload) {
+                    needsReload = false;
+                    location.reload();
+                    return;
+                }
+                break;
             }
             case 'execCommand': {
                 document.execCommand(event.data.data);
+                break;
             }
         }
     });
@@ -78,5 +131,16 @@ addEventListener("load", function (event) {
 
         const value = localStorage.getItem(key);
         document.documentElement.style.setProperty(key, value);
+    }
+
+    // On load, apply the best SC theme from cached editor background.
+    // This runs AFTER scdoc.js applyTheme() so it corrects the theme immediately
+    // on the first page load, before the init message arrives.
+    var cachedBg = localStorage.getItem('--vscode-editor-background');
+    if (cachedBg) {
+        var earlyTheme = selectBestTheme(cachedBg);
+        if (earlyTheme && typeof setTheme === 'function') {
+            setTheme(earlyTheme);
+        }
     }
 });

@@ -1,42 +1,96 @@
+:root {
+    --color-bg: var(--vscode-sideBar-background) !important;
+    --color-fg: var(--vscode-editor-foreground) !important;
+    --color-fg-100: var(--vscode-editor-foreground) !important;
+    --color-fg-200: var(--vscode-descriptionForeground) !important;
+    --color-fg-300: var(--vscode-editor-foreground) !important;
+    --color-fg-400: var(--vscode-descriptionForeground) !important;
+    --color-link: var(--vscode-textLink-foreground) !important;
+    --color-input-fg: var(--vscode-input-foreground) !important;
+    --color-input-bg: var(--vscode-input-background) !important;
+    --color-warning-fg: var(--vscode-statusBarItem-warningForeground) !important;
+    --color-warning-bg: var(--vscode-statusBarItem-warningBackground) !important;
+    --color-extensions-fg: var(--vscode-editor-foreground) !important;
+    --color-extensions-bg: var(--vscode-editorWidget-background) !important;
+    --color-cm-selection: var(--vscode-editor-selectionBackground) !important;
+}
+
 body {
-    color: var(--vscode-editor-foreground);
-    background: var(--vscode-sideBar-background);
+    color: var(--vscode-editor-foreground) !important;
+    background: var(--vscode-sideBar-background) !important;
+    overflow-x: hidden !important;
+}
+
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+::-webkit-scrollbar-thumb {
+    background: rgba(128, 128, 128, 0.4);
+    border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: rgba(128, 128, 128, 0.7);
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-corner {
+    background: transparent;
 }
 
 a.method-name {
-    color: var(--vscode-editor-foreground)
+    color: var(--vscode-editor-foreground) !important;
 }
 
 a:link,
 a:visited,
 a:link:hover {
-    color: var(--vscode-textLink-foreground)
+    color: var(--vscode-textLink-foreground) !important;
 }
 
 a.menu-link {
     text-transform: uppercase;
-    color: var(--vscode-sideBarSectionHeader-foreground);
+    color: var(--vscode-sideBarSectionHeader-foreground) !important;
     font-weight: 700;
     font-size: 11px;
 }
 
 #menubar {
-    background-color: var(--vscode-menu-background);
+    background-color: var(--vscode-menu-background) !important;
 }
 
 .submenu, #toc {
-    background-color: var(--vscode-menu-background);
+    background-color: var(--vscode-menu-background) !important;
 }
 
 .note, .warning {
-    color: var(--vscode-statusBarItem-warningForeground);
-    background-color: var(--vscode-statusBarItem-warningBackground);
+    color: var(--vscode-statusBarItem-warningForeground) !important;
+    background-color: var(--vscode-statusBarItem-warningBackground) !important;
 }
 
 #summary {
-    color: var(--vscode-foreground);;
+    color: var(--vscode-foreground) !important;
 }
 
-.CodeMirror {
-    background: var(--vscode-editor-foreground);
+#toctitle {
+    color: var(--vscode-editor-foreground) !important;
 }
+
+#search_checks, #search_checks0, #search_box, #search_settings {
+    color: var(--vscode-editor-foreground) !important;
+    background: var(--vscode-input-background) !important;
+}
+
+.CodeMirror-selected,
+.CodeMirror-line::selection,
+.CodeMirror-line > span::selection,
+.CodeMirror-line > span > span::selection {
+    background-color: var(--vscode-editor-selectionBackground) !important;
+    opacity: 1 !important;
+}
+
