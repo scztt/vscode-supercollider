@@ -371,6 +371,23 @@ export class SuperColliderContext implements Disposable, EvaluationDelegate, Com
                     }
 
                     const streamInfo: MessageTransports = { reader: reader, writer: writer, detached: false };
+                    let resolved = false;
+
+                    const cleanup = () => {
+                        reader.dispose();
+                        writer.dispose();
+                        if (that.sclangProcess === sclangProcess) {
+                            that.disposeProcess();
+                        }
+                    };
+
+                    const rejectIfPending = (message: string) => {
+                        if (!resolved) {
+                            resolved = true;
+                            cleanup();
+                            err(message);
+                        }
+                    };
 
                     sclangProcess.stdout
                         .on('data', data => {
@@ -382,9 +399,14 @@ export class SuperColliderContext implements Disposable, EvaluationDelegate, Com
                             });
 
                             if (string.indexOf('***LSP READY***') != -1) {
+                                resolved = true;
                                 that.waitingForBoot = false;
                                 that.setState('running');
                                 res(streamInfo);
+                            }
+
+                            if (string.indexOf('Library has not been compiled successfully') != -1) {
+                                rejectIfPending('SuperCollider class library failed to compile. Check the output for errors.');
                             }
                         })
                         .on('end', async (args) => {
@@ -394,32 +416,20 @@ export class SuperColliderContext implements Disposable, EvaluationDelegate, Com
                                 source: 'vscode'
                             });
 
-                            reader.dispose();
-                            writer.dispose();
-                            if (that.sclangProcess === sclangProcess) {
-                                that.disposeProcess();
-                            }
+                            rejectIfPending('sclang exited before initialization completed.');
                         })
-                        .on('error', async (err) => {
+                        .on('error', async (e) => {
                             // Emit error event
                             that._outputEventEmitter.fire({
-                                text: "\nsclang errored: " + err,
+                                text: "\nsclang errored: " + e,
                                 source: 'sclang'
                             });
 
-                            reader.dispose();
-                            writer.dispose()
-                            if (that.sclangProcess === sclangProcess) {
-                                that.disposeProcess();
-                            }
+                            rejectIfPending('sclang errored: ' + e);
                         });
 
                     sclangProcess.on('exit', async (code, signal) => {
-                        reader.dispose();
-                        writer.dispose()
-                        if (that.sclangProcess === sclangProcess) {
-                            that.disposeProcess();
-                        }
+                        rejectIfPending('sclang exited (code=' + code + ') before initialization completed.');
                     });
 
                     // Emit startup message
@@ -634,8 +644,9 @@ export class SuperColliderContext implements Disposable, EvaluationDelegate, Com
 
     async restart() {
         if (this._restarting) {
-            vscode.window.showWarningMessage('SuperCollider is already restarting');
-            return;
+            const msg = 'SuperCollider is already restarting';
+            vscode.window.showWarningMessage(msg);
+            throw new Error(msg);
         }
 
         this._restarting = true;
@@ -643,6 +654,10 @@ export class SuperColliderContext implements Disposable, EvaluationDelegate, Com
             const processDied = this.sclangProcess === null;
             await this.stopClient(processDied);
             await this.startClient();
+        } catch (e) {
+            const message = e instanceof Error ? e.message : String(e);
+            vscode.window.showErrorMessage(message);
+            throw e;
         } finally {
             this._restarting = false;
         }
