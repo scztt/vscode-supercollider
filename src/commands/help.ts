@@ -97,6 +97,8 @@ function makeHTML(path: string, port: number) {
                             vscode.postMessage(event.data)
                         } else if (event.data.command == 'evaluate-code') {
                             vscode.postMessage(event.data)
+                        } else if (event.data.command == 'selection-changed') {
+                            vscode.postMessage(event.data)
                         } else if (event.data.command == 'navigate') {
                             vscode.setState({ helpPath: event.data.path });
                             vscode.postMessage(event.data);
@@ -140,6 +142,9 @@ let helpContext: SuperColliderContext | null = null;
 let frontendCache: { js: string, css: string } | null = null;
 let helpPanels: vscode.WebviewPanel[] = [];
 let extensionContext: vscode.ExtensionContext | null = null;
+let activeHelpPanel: vscode.WebviewPanel | null = null;
+let activeHelpPath: string | null = null;
+let helpSelection: string | null = null;
 
 async function searchHelpInActiveDocument(context: SuperColliderContext) {
     const activeTextEditor = vscode.window.activeTextEditor;
@@ -181,12 +186,33 @@ function setupHelpPanel(panel: vscode.WebviewPanel, helpPath: string) {
     let currentHelpPath = helpPath;
     panel.onDidDispose(() => {
         helpPanels = helpPanels.filter(p => p !== panel);
+        if (activeHelpPanel === panel) {
+            activeHelpPanel = null;
+            helpSelection = null;
+            vscode.commands.executeCommand('setContext', 'supercollider.helpFocused', false);
+        }
+    });
+    panel.onDidChangeViewState(() => {
+        if (panel.active) {
+            activeHelpPanel = panel;
+            activeHelpPath = currentHelpPath;
+            vscode.commands.executeCommand('setContext', 'supercollider.helpFocused', true);
+        } else if (activeHelpPanel === panel) {
+            activeHelpPanel = null;
+            helpSelection = null;
+            vscode.commands.executeCommand('setContext', 'supercollider.helpFocused', false);
+        }
     });
     panel.webview.onDidReceiveMessage(
         (message) => {
             switch (message.command) {
+                case 'selection-changed': {
+                    helpSelection = message.text || null;
+                    break;
+                }
                 case 'navigate': {
                     currentHelpPath = message.path;
+                    if (activeHelpPanel === panel) activeHelpPath = currentHelpPath;
                     break;
                 }
                 case 'open-local-file': {
@@ -213,6 +239,18 @@ function setupHelpPanel(panel: vscode.WebviewPanel, helpPath: string) {
 
 export function setContext(context: SuperColliderContext) {
     helpContext = context;
+}
+
+/** If a help panel is focused, evaluate its selection. Returns true if help is focused (even without selection). */
+export function evaluateHelpSelection(): boolean {
+    if (!activeHelpPanel) return false;
+    if (!helpSelection || !helpContext) return true;
+    const helpFileUrl = lastRootUri && activeHelpPath
+        ? url.pathToFileURL(url.fileURLToPath(lastRootUri + '/' + activeHelpPath)).href
+        : 'untitled:help-eval';
+    const doc: TextDocumentIdentifier = { uri: helpFileUrl };
+    helpContext.doEvaluate(doc, helpSelection, null);
+    return true;
 }
 
 export async function searchHelp(context: SuperColliderContext) {

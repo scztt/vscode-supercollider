@@ -152,6 +152,17 @@
                 "when": "editorLangId == 'supercollider'"
             },
             {
+                "command": "supercollider.evaluateSelection",
+                "key": "shift+enter",
+                "when": "supercollider.helpFocused"
+            },
+            {
+                "command": "supercollider.evaluateRegion",
+                "key": "ctrl+return",
+                "mac": "cmd+enter",
+                "when": "supercollider.helpFocused"
+            },
+            {
                 "command": "supercollider.cmdPeriod",
                 "key": "ctrl+.",
                 "mac": "cmd+."

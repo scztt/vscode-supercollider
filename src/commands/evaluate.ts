@@ -18,6 +18,7 @@ import {
 } from 'vscode-languageclient/node';
 
 import { SuperColliderContext, OutputMessage, EvaluationResult, EvaluationDelegate } from '../context';
+import { evaluateHelpSelection } from './help';
 
 function ensure(target, key) {
     if (target[key] === void 0) {
@@ -230,6 +231,7 @@ export function registerEvaluateProvider(context: SuperColliderContext, provider
         vscode.commands.registerCommand(
             'supercollider.evaluateSelection',
             async (documentUri, inputRange) => {
+                if (!documentUri && evaluateHelpSelection()) return;
                 const document = documentUri ? await vscode.workspace.openTextDocument(vscode.Uri.parse(documentUri)) : vscode.window.activeTextEditor.document;
                 // Now you have the TextDocument
                 let range: Range = (inputRange != null)
@@ -251,6 +253,7 @@ export function registerEvaluateProvider(context: SuperColliderContext, provider
         vscode.commands.registerCommand(
             'supercollider.evaluateLine',
             () => {
+                if (evaluateHelpSelection()) return;
                 const document = vscode.window.activeTextEditor.document;
                 const range = currentDocumentLine();
                 if (range !== null) {
@@ -262,6 +265,7 @@ export function registerEvaluateProvider(context: SuperColliderContext, provider
         vscode.commands.registerCommand(
             'supercollider.evaluateRegion',
             () => {
+                if (evaluateHelpSelection()) return;
                 const document = vscode.window.activeTextEditor.document;
                 const range = currentDocumentRegion();
                 if (range !== null) {

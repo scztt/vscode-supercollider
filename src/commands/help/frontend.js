@@ -102,9 +102,17 @@ addEventListener("load", function (event) {
                     var cmOffset = cmWrap ? cmWrap.offsetTop : 0;
                     btnWrap.style.top = Math.max(0, cmOffset + selY - 24) + 'px';
                     btnWrap.classList.add('has-selection');
+                    window.parent.postMessage({
+                        command: 'selection-changed',
+                        text: cm.getSelection()
+                    }, '*');
                 } else {
                     btnWrap.classList.remove('has-selection');
                     updateStickyPos();
+                    window.parent.postMessage({
+                        command: 'selection-changed',
+                        text: null
+                    }, '*');
                 }
             });
         }
