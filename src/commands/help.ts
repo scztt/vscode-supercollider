@@ -97,6 +97,11 @@ function makeHTML(path: string, port: number) {
                             vscode.postMessage(event.data)
                         } else if (event.data.command == 'navigate') {
                             vscode.setState({ helpPath: event.data.path });
+                        } else if (event.data.command == 'keyboard-rebroadcast') {
+                            const type = event.data.type;
+                            delete event.data.type;
+                            delete event.data.command;
+                            window.dispatchEvent(new KeyboardEvent(type, event.data));
                         }
                     }
                 });

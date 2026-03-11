@@ -12,13 +12,13 @@ addEventListener("load", function (event) {
         oldFixTOC();
 
         if (window.location !== window.parent.location) {
-            create_menubar_item("\u203a", "#", function(a, li) {
+            create_menubar_item(">", "#", function(a, li) {
                 a.attr("href", null).addClass("vsc-nav-arrow");
                 a.on("click", function(e) { e.preventDefault(); history.forward(); });
                 li.addClass("vsc-nav-item").detach();
                 $("#nav").prepend(li);
             });
-            create_menubar_item("\u2039", "#", function(a, li) {
+            create_menubar_item("<", "#", function(a, li) {
                 a.attr("href", null).addClass("vsc-nav-arrow");
                 a.on("click", function(e) { e.preventDefault(); history.back(); });
                 li.addClass("vsc-nav-item").detach();
@@ -138,6 +138,25 @@ addEventListener("load", function (event) {
             }
         }
     });
+
+    // Rebroadcast keyboard events to the outer webview so VS Code can
+    // handle shortcuts like Cmd+W (close panel) while the iframe has focus.
+    var rebroadcast = function(type, e) {
+        window.parent.postMessage({
+            command: 'keyboard-rebroadcast',
+            type: type,
+            key: e.key,
+            keyCode: e.keyCode,
+            code: e.code,
+            shiftKey: e.shiftKey,
+            altKey: e.altKey,
+            ctrlKey: e.ctrlKey,
+            metaKey: e.metaKey,
+            repeat: e.repeat
+        }, '*');
+    };
+    window.addEventListener('keydown', function(e) { rebroadcast('keydown', e); });
+    window.addEventListener('keyup', function(e) { rebroadcast('keyup', e); });
 
     for (var i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);

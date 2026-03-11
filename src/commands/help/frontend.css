@@ -64,12 +64,17 @@ a.menu-link {
     border-right: none !important;
 }
 
+.vsc-nav-item + .vsc-nav-item {
+    border-left: none !important;
+}
+
 a.vsc-nav-arrow {
     text-transform: none !important;
-    font-size: 18px !important;
-    font-weight: 400 !important;
-    padding: 0 0.3em !important;
-    opacity: 0.5;
+    font-size: 13px !important;
+    font-weight: 600 !important;
+    padding: 0 0.25em !important;
+    line-height: 1.5em !important;
+    opacity: 0.4;
     transition: opacity 0.15s ease;
 }
 
