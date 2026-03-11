@@ -108,12 +108,13 @@ export class SuperColliderMcpServer {
         return this.context;
     }
 
-    private formatEvalResult(result: EvaluationResult): { content: { type: 'text', text: string }[] } {
+    private formatEvalResult(result: EvaluationResult): { content: { type: 'text', text: string }[], isError?: boolean } {
         if (result.compileError) {
             return {
                 content: [
                     { type: 'text', text: `ERROR (compile): ${result.compileError}` },
                 ],
+                isError: true,
             };
         }
         if (result.error) {
@@ -121,6 +122,7 @@ export class SuperColliderMcpServer {
                 content: [
                     { type: 'text', text: `ERROR (runtime): ${result.error}` },
                 ],
+                isError: true,
             };
         }
         return {
