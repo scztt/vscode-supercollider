@@ -60,6 +60,23 @@ a.menu-link {
     font-size: 11px;
 }
 
+.vsc-nav-item {
+    border-right: none !important;
+}
+
+a.vsc-nav-arrow {
+    text-transform: none !important;
+    font-size: 18px !important;
+    font-weight: 400 !important;
+    padding: 0 0.3em !important;
+    opacity: 0.5;
+    transition: opacity 0.15s ease;
+}
+
+a.vsc-nav-arrow:hover {
+    opacity: 1;
+}
+
 #menubar {
     background-color: var(--vscode-menu-background) !important;
 }

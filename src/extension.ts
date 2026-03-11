@@ -35,6 +35,9 @@ export const internalCommands = [
 let supercolliderContext: SuperColliderContext = null;
 
 export async function activate(context: vscode.ExtensionContext) {
+    // Register early, before VS Code tries to restore stale webview panels
+    help.activate(context);
+
     const outputChannel = vscode.window.createOutputChannel('supercollider', 'supercollider-log');
     context.subscriptions.push(outputChannel);
 
@@ -90,7 +93,6 @@ export async function activate(context: vscode.ExtensionContext) {
             // Wire up the MCP server to sclang now that it's ready
             getMcpServer()?.setContext(supercolliderContext);
 
-            help.activate();
             supercolliderContext.client.onNotification('supercollider/serverStatus', (data) => {
                 serverStatusBar.updateStatusBar(data);
             });

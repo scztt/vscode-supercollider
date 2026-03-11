@@ -79,6 +79,7 @@ function makeHTML(path: string, port: number) {
             //# sourceURL=help.js
             window.onload = () => {
                 const vscode = acquireVsCodeApi();
+                vscode.setState({ helpPath: ${JSON.stringify(path)} });
                 var frame = document.getElementById('frame');
 
                 for (const command of ['selectAll', 'copy', 'paste', 'cut', 'undo', 'redo']) {
@@ -92,10 +93,10 @@ function makeHTML(path: string, port: number) {
                     if (event.origin == 'http://127.0.0.1:${port}') {
                         if (event.data.command == 'open-local-file') {
                         vscode.postMessage(event.data)
-                        } else if (event.data.command == 'keyboard-rebroadcast') {
-                            const type = event.data.type;
-                            delete event.data.type;
-                            window.dispatchEvent(new KeyboardEvent(type, event.data));
+                        } else if (event.data.command == 'open-code') {
+                            vscode.postMessage(event.data)
+                        } else if (event.data.command == 'navigate') {
+                            vscode.setState({ helpPath: event.data.path });
                         }
                     }
                 });
@@ -126,9 +127,11 @@ function makeHTML(path: string, port: number) {
 
 let server = null
 let serverPort: number | null = null
+let lastRootUri: string | null = null;
 let helpContext: SuperColliderContext | null = null;
 let frontendCache: { js: string, css: string } | null = null;
 let helpPanels: vscode.WebviewPanel[] = [];
+let extensionContext: vscode.ExtensionContext | null = null;
 
 async function searchHelpInActiveDocument(context: SuperColliderContext) {
     const activeTextEditor = vscode.window.activeTextEditor;
@@ -146,6 +149,8 @@ async function searchHelpInActiveDocument(context: SuperColliderContext) {
         });
 
         await launchServer(result.rootUri)
+        lastRootUri = result.rootUri;
+        extensionContext?.globalState.update('helpRootUri', result.rootUri);
 
         let helpPath = result.uri.replace(result.rootUri, '');
 
@@ -158,20 +163,29 @@ async function searchHelpInActiveDocument(context: SuperColliderContext) {
                 retainContextWhenHidden: true,
                 enableScripts: true
             });
-        helpPanel.webview.html = makeHTML(helpPath, serverPort!);
-        helpPanels.push(helpPanel);
-        helpPanel.onDidDispose(() => {
-            helpPanels = helpPanels.filter(p => p !== helpPanel);
-        });
-        helpPanel.webview.onDidReceiveMessage(
-            (message) => {
-                switch (message.command) {
-                    case 'open_local_file': {
-                        vscode.workspace.openTextDocument(url.fileURLToPath(message.href)).then(doc => { vscode.window.showTextDocument(doc); }, (err) => { vscode.window.showErrorMessage(err); });
-                    }
-                }
-            })
+        setupHelpPanel(helpPanel, helpPath);
     }
+}
+
+function setupHelpPanel(panel: vscode.WebviewPanel, helpPath: string) {
+    panel.webview.html = makeHTML(helpPath, serverPort!);
+    helpPanels.push(panel);
+    panel.onDidDispose(() => {
+        helpPanels = helpPanels.filter(p => p !== panel);
+    });
+    panel.webview.onDidReceiveMessage(
+        (message) => {
+            switch (message.command) {
+                case 'open-local-file': {
+                    vscode.workspace.openTextDocument(url.fileURLToPath(message.href)).then(doc => { vscode.window.showTextDocument(doc, vscode.ViewColumn.One); }, (err) => { vscode.window.showErrorMessage(err); });
+                    break;
+                }
+                case 'open-code': {
+                    vscode.workspace.openTextDocument({ content: message.code, language: 'supercollider' }).then(doc => { vscode.window.showTextDocument(doc, vscode.ViewColumn.One); });
+                    break;
+                }
+            }
+        });
 }
 
 export async function searchHelp(context: SuperColliderContext) {
@@ -179,8 +193,25 @@ export async function searchHelp(context: SuperColliderContext) {
     await searchHelpInActiveDocument(context);
 }
 
-export function activate() {
+export function activate(context: vscode.ExtensionContext) {
     getFrontendFiles();
+    // Restore help panels from previous session
+    context.subscriptions.push(
+        vscode.window.registerWebviewPanelSerializer(HelpPanelName, {
+            async deserializeWebviewPanel(panel: vscode.WebviewPanel, state: { helpPath?: string }) {
+                const helpPath = state?.helpPath;
+                if (!helpPath || !lastRootUri) {
+                    panel.dispose();
+                    return;
+                }
+                await launchServer(lastRootUri);
+                setupHelpPanel(panel, helpPath);
+            }
+        })
+    );
+    // Persist lastRootUri across sessions
+    lastRootUri = context.globalState.get('helpRootUri') ?? null;
+    extensionContext = context;
 }
 
 export function deactivate() {

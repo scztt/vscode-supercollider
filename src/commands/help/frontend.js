@@ -1,4 +1,10 @@
 addEventListener("load", function (event) {
+    // Notify parent of current path so webview state tracks navigation
+    window.parent.postMessage({
+        command: "navigate",
+        path: location.pathname.replace(/^\/+/, '')
+    }, "*");
+
     let oldFixTOC = window.fixTOC;
 
     // Hook fixTOC — runs on all SC help pages (class docs, Browse, Search)
@@ -6,25 +12,51 @@ addEventListener("load", function (event) {
         oldFixTOC();
 
         if (window.location !== window.parent.location) {
-            create_menubar_item("\u21e8", "#", function(a, li) {
-                a.attr("href", null);
+            create_menubar_item("\u203a", "#", function(a, li) {
+                a.attr("href", null).addClass("vsc-nav-arrow");
                 a.on("click", function(e) { e.preventDefault(); history.forward(); });
-                li.detach();
+                li.addClass("vsc-nav-item").detach();
                 $("#nav").prepend(li);
             });
-            create_menubar_item("\u21e6", "#", function(a, li) {
-                a.attr("href", null);
+            create_menubar_item("\u2039", "#", function(a, li) {
+                a.attr("href", null).addClass("vsc-nav-arrow");
                 a.on("click", function(e) { e.preventDefault(); history.back(); });
-                li.detach();
+                li.addClass("vsc-nav-item").detach();
                 $("#nav").prepend(li);
             });
         }
     }
 
+    // Hijack copy buttons in code views — clipboard API doesn't work in webviews.
+    // Replace with "open in editor" arrow that sends code to VS Code as a new .scd document.
+    document.querySelectorAll('.codeMirrorContainer').forEach(function(container) {
+        var button = container.querySelector('.copy-button');
+        var editor = container.querySelector('.editor');
+        if (!button || !editor) return;
+
+        // Replace icon with left arrow
+        button.innerHTML = '<span style="font-size:16px; color: var(--color-cm-comment); display:block; width:20px; height:20px; line-height:20px; text-align:center;">\u21e6</span>';
+        button.title = 'Open in editor';
+
+        // Remove old listeners by cloning
+        var newButton = button.cloneNode(true);
+        button.parentNode.replaceChild(newButton, button);
+
+        newButton.addEventListener('click', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            window.parent.postMessage({
+                command: 'open-code',
+                code: editor.value
+            }, '*');
+        });
+    });
+
     // Intercept file:// links on all pages
     document.querySelectorAll('a').forEach((a) => {
         if (a.href && a.href.startsWith("file://")) {
             a.addEventListener("click", function (e) {
+                e.preventDefault();
                 window.parent.postMessage({
                     command: "open-local-file",
                     href: a.href
@@ -107,24 +139,6 @@ addEventListener("load", function (event) {
         }
     });
 
-    const rebroadcast = (type, e) => {
-        window.parent.postMessage({
-            command: 'keyboard-rebroadcast',
-            type: type,
-            key: e.key,
-            keyCode: e.keyCode,
-            code: e.code,
-            shiftKey: e.shiftKey,
-            altKey: e.altKey,
-            ctrlKey: e.ctrlKey,
-            metaKey: e.metaKey,
-            repeat: e.repeat
-        }, "*");
-    };
-    window.addEventListener('keydown', (event) => rebroadcast('keydown', event));
-    window.addEventListener('keyup', (event) => rebroadcast('keyup', event));
-    window.addEventListener('keypress', (event) => rebroadcast('keypress', event));
-    
     for (var i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
         if (key.indexOf('--vscode') === -1) continue;
