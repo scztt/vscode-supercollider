@@ -108,13 +108,48 @@ a.vsc-nav-arrow:hover {
     background: var(--vscode-input-background) !important;
 }
 
-.vsc-play-button {
-    right: 34px !important;
+.vsc-btn-wrap {
+    position: absolute;
+    top: 4px;
+    right: 26px;
+    z-index: 10;
+    display: flex;
+    gap: 6px;
 }
 
-.codeMirrorContainer:hover .vsc-play-button .copy-ico {
+.vsc-btn-wrap .copy-button {
+    position: static !important;
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+}
+
+.vsc-btn-wrap .check-ico {
+    display: none !important;
+}
+
+.vsc-btn-wrap .copy-ico {
+    position: static !important;
+}
+
+.vsc-btn-wrap .vsc-play-button {
+    visibility: visible !important;
+}
+
+.codeMirrorContainer:hover .vsc-btn-wrap .vsc-play-button {
+    opacity: 1;
+}
+
+.codeMirrorContainer:hover .vsc-btn-wrap .copy-ico {
     opacity: 1;
     visibility: visible;
+}
+
+.codeMirrorContainer .vsc-btn-wrap.has-selection .copy-button,
+.codeMirrorContainer .vsc-btn-wrap.has-selection .copy-ico,
+.codeMirrorContainer .vsc-btn-wrap.has-selection .vsc-play-button {
+    opacity: 1 !important;
+    visibility: visible !important;
 }
 
 .CodeMirror-selected,

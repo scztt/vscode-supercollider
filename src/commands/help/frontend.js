@@ -37,7 +37,6 @@ addEventListener("load", function (event) {
 
         // Replace copy button click handler (keep original icon)
         var newButton = button.cloneNode(true);
-        button.parentNode.replaceChild(newButton, button);
         newButton.title = 'Open in editor';
 
         newButton.addEventListener('click', function(e) {
@@ -49,12 +48,11 @@ addEventListener("load", function (event) {
             }, '*');
         });
 
-        // Add play button next to copy button
+        // Create play button
         var playButton = document.createElement('button');
         playButton.className = 'copy-button vsc-play-button';
         playButton.title = 'Evaluate in SuperCollider';
         playButton.innerHTML = '<span class="copy-ico" style="opacity:1;visibility:visible;">\u25B6</span>';
-        container.appendChild(playButton);
 
         // Use mousedown: CM's blur handler clears selection before click fires
         playButton.addEventListener('mousedown', function(e) {
@@ -68,6 +66,48 @@ addEventListener("load", function (event) {
                 code: code
             }, '*');
         });
+
+        // Wrap both buttons in a sticky container that floats at the top
+        // of the code block, staying visible while scrolling through long examples.
+        // When there's a selection, reposition near it.
+        var btnWrap = document.createElement('div');
+        btnWrap.className = 'vsc-btn-wrap';
+        btnWrap.appendChild(playButton);
+        btnWrap.appendChild(newButton);
+        button.parentNode.replaceChild(btnWrap, button);
+        container.insertBefore(btnWrap, container.firstChild);
+
+        // Sticky behavior via scroll: keep buttons visible while code block is on screen.
+        // When there's a selection, show buttons at the selection start.
+        var cm = editor.editor;
+        var menuBarH = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--menu-bar-height')) || 33;
+
+        function updateStickyPos() {
+            if (btnWrap.classList.contains('has-selection')) return;
+            var rect = container.getBoundingClientRect();
+            var stickyOffset = menuBarH - rect.top;
+            btnWrap.style.top = Math.max(4, stickyOffset) + 'px';
+        }
+
+        window.addEventListener('scroll', updateStickyPos, { passive: true });
+        updateStickyPos();
+
+        if (cm) {
+            cm.on('cursorActivity', function() {
+                if (cm.somethingSelected()) {
+                    // cursorCoords(true) = selection start, 'local' = relative to CM editor
+                    var cmWrap = container.querySelector('.CodeMirror');
+                    var selY = cm.cursorCoords(true, 'local').top;
+                    // CM wrapper offset within the container
+                    var cmOffset = cmWrap ? cmWrap.offsetTop : 0;
+                    btnWrap.style.top = Math.max(0, cmOffset + selY - 24) + 'px';
+                    btnWrap.classList.add('has-selection');
+                } else {
+                    btnWrap.classList.remove('has-selection');
+                    updateStickyPos();
+                }
+            });
+        }
     });
 
     // Intercept file:// links on all pages

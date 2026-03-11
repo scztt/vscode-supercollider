@@ -90,8 +90,9 @@ export async function activate(context: vscode.ExtensionContext) {
 
             sclangInfoPanel.setContext(supercolliderContext);
 
-            // Wire up the MCP server to sclang now that it's ready
+            // Wire up the MCP server and help browser to sclang now that it's ready
             getMcpServer()?.setContext(supercolliderContext);
+            help.setContext(supercolliderContext);
 
             supercolliderContext.client.onNotification('supercollider/serverStatus', (data) => {
                 serverStatusBar.updateStatusBar(data);

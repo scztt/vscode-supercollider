@@ -211,6 +211,10 @@ function setupHelpPanel(panel: vscode.WebviewPanel, helpPath: string) {
         });
 }
 
+export function setContext(context: SuperColliderContext) {
+    helpContext = context;
+}
+
 export async function searchHelp(context: SuperColliderContext) {
     helpContext = context;
     await searchHelpInActiveDocument(context);
