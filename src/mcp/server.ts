@@ -352,7 +352,7 @@ export class SuperColliderMcpServer {
                     : '';
                 const code = `(
                     var word = ${JSON.stringify(args.name)}.asSymbol;
-                    var methods = Class.allClasses.collect(_.methods).flatten(1)
+                    var methods = Class.allClasses.collect(_.methods).reject(_.isNil).flatten(1)
                         .select { |m| m.name == word };
                     ${classFilter}
                     methods.collect { |m|
@@ -407,18 +407,26 @@ export class SuperColliderMcpServer {
                             var body = aRoot.children[1];
                             var found, foundSecId;
                             var sectionIds = [\\CLASSMETHODS, \\INSTANCEMETHODS];
+                            var methodIds = [\\CMETHOD, \\IMETHOD, \\METHOD];
+                            var searchNodes = { |nodes|
+                                nodes.do { |node|
+                                    if (methodIds.indexOfEqual(node.id).notNil) {
+                                        var names = node.children[0].children.collect(_.text);
+                                        if (names.indexOfEqual(${methodStr}).notNil) {
+                                            found = node;
+                                        };
+                                    } {
+                                        if (node.id == \\SUBSECTION) {
+                                            searchNodes.(node.children);
+                                        };
+                                    };
+                                };
+                            };
                             sectionIds.do { |secId|
                                 body.children.do { |section|
                                     if (section.id == secId) {
-                                        section.children.do { |node|
-                                            if ([\\CMETHOD, \\IMETHOD, \\METHOD].includes(node.id)) {
-                                                var names = node.children[0].children.collect(_.text);
-                                                if (names.indexOfEqual(${methodStr}).notNil) {
-                                                    found = node;
-                                                    foundSecId = secId;
-                                                };
-                                            };
-                                        };
+                                        searchNodes.(section.children);
+                                        if (found.notNil) { foundSecId = secId };
                                     };
                                 };
                             };
@@ -540,7 +548,22 @@ export class SuperColliderMcpServer {
                     }
                 )`;
                 const result = await this.requireContext().doEvaluate(doc, code, 'mcp');
-                return this.formatEvalResult(result);
+                const formatted = this.formatEvalResult(result);
+                // Post-process: convert method signature headings to code blocks
+                // e.g. "### *ar(`freq`: 440, `phase`: 0)" → "```supercollider\n*ar(freq: 440, phase: 0)\n```"
+                if (!formatted.isError) {
+                    formatted.content = formatted.content.map(c => ({
+                        ...c,
+                        text: c.text.replace(
+                            /^### ([*\-].+)$/gm,
+                            (_match, sig) => {
+                                const clean = sig.replace(/`/g, '');
+                                return '```supercollider\n' + clean + '\n```';
+                            }
+                        ),
+                    }));
+                }
+                return formatted;
             },
         });
     }
