@@ -12,7 +12,6 @@ import {
     LanguageClientOptions,
     MessageTransports,
     ServerOptions,
-    State,
     TextDocumentIdentifier
 } from 'vscode-languageclient/node';
 
@@ -145,10 +144,8 @@ export class SuperColliderContext implements Disposable, EvaluationDelegate, Com
     lspTokenPath: string;
     outputChannel: vscode.OutputChannel;
     globalState: vscode.Memento;
-    readerSocket: dgram.Socket;
     serverPorts: ServerPortRange | null;
     activated: boolean = false;
-    waitingForBoot: boolean = false;
     private _restarting: boolean = false;
     liveshareGuestProxy: LiveshareGuestProxy;
     liveshareHost: LiveshareHost;
@@ -355,14 +352,12 @@ export class SuperColliderContext implements Disposable, EvaluationDelegate, Com
 
                 Promise.all([readerSocket, writerSocket]).then(async (sockets) => {
                     let socket = sockets[0];
-                    that.readerSocket = socket;
 
                     let readerPort = socket.address().port;
                     let writerPort = sockets[1];
                     let reader = new UDPMessageReader(socket);
                     let writer = new UDPMessageWriter(socket, writerPort, lspAddress);
 
-                    that.waitingForBoot = true;
                     that.setState('starting');
                     let sclangProcess = that.sclangProcess = await that.createProcess(readerPort, writerPort);
 
@@ -376,6 +371,7 @@ export class SuperColliderContext implements Disposable, EvaluationDelegate, Com
                     const cleanup = () => {
                         reader.dispose();
                         writer.dispose();
+                        try { socket.close(); } catch {}
                         if (that.sclangProcess === sclangProcess) {
                             that.disposeProcess();
                         }
@@ -400,7 +396,6 @@ export class SuperColliderContext implements Disposable, EvaluationDelegate, Com
 
                             if (string.indexOf('***LSP READY***') != -1) {
                                 resolved = true;
-                                that.waitingForBoot = false;
                                 that.setState('running');
                                 res(streamInfo);
                             }
@@ -430,6 +425,11 @@ export class SuperColliderContext implements Disposable, EvaluationDelegate, Com
 
                     sclangProcess.on('exit', async (code, signal) => {
                         rejectIfPending('sclang exited (code=' + code + ') before initialization completed.');
+                        // Always clean up, even after successful startup.
+                        // Without this, sclangProcess stays non-null after an
+                        // unexpected exit, causing restart to attempt a graceful
+                        // LSP shutdown on a dead process (which times out).
+                        cleanup();
                     });
 
                     // Emit startup message
@@ -582,9 +582,7 @@ export class SuperColliderContext implements Disposable, EvaluationDelegate, Com
 
         this.activated = false;
 
-        // Graceful async teardown
-        this.disposeProcess();
-        await this.stopClient(true);
+        await this.stopClient();
 
         // Dispose subscriptions (features, liveshare, commands)
         for (const d of this.subscriptions) {
@@ -599,11 +597,7 @@ export class SuperColliderContext implements Disposable, EvaluationDelegate, Com
     async startClient() {
         if (this.client?.isRunning()) { return }
 
-        if (this.client.state == State.Running) {
-            await this.client.restart();
-        } else {
-            await this.client.start();
-        }
+        await this.client.start();
 
         // Extract custom data from the server's initialize result
 
@@ -627,40 +621,41 @@ export class SuperColliderContext implements Disposable, EvaluationDelegate, Com
         this._stateChangeEmitter.fire(this._state);
     }
 
-    async stopClient(processDied = false) {
-        if (!this.client?.isRunning()) {
-            this.disposeProcess();
+    async stopClient() {
+        this.disposeProcess();
+
+        if (!this.client) { return; }
+
+        if (!this.client.isRunning()) {
+            // Client isn't running — force-reset internal state so it can
+            // accept a new start(). LanguageClient has no public API for
+            // recovering from StartFailed state.
+            const client = this.client as any;
+            client._state = 'initial';
+            client._onStart = undefined;
+            client._connection = undefined;
             return;
         }
 
-        if (processDied) {
-            // Process is already dead — client.stop() will timeout trying to
-            // send LSP shutdown to a dead connection. Catch and ignore.
-            try { await this.client.stop(0); } catch {}
-        } else {
-            await this.client.stop(2000);
-        }
+        // Process is already dead (disposeProcess above) — LSP shutdown
+        // will never get a response, so use timeout 0.
+        try { await this.client.stop(0); } catch {}
     }
 
     async restart() {
         if (this._restarting) {
-            const msg = 'SuperCollider is already restarting';
-            vscode.window.showWarningMessage(msg);
-            throw new Error(msg);
+            vscode.window.showWarningMessage('SuperCollider is already restarting');
+            return;
         }
 
         this._restarting = true;
         try {
-            const processDied = this.sclangProcess === null;
-            await this.stopClient(processDied);
+            await this.stopClient();
             await this.startClient();
         } catch (e) {
+            // Log but don't block — user can restart again via command.
             const message = e instanceof Error ? e.message : String(e);
-            const choice = await vscode.window.showErrorMessage(message, 'Retry');
-            if (choice === 'Retry') {
-                this._restarting = false;
-                return this.restart();
-            }
+            console.error('SuperCollider start failed:', message);
         } finally {
             this._restarting = false;
         }
