@@ -12,15 +12,15 @@ addEventListener("load", function (event) {
         oldFixTOC();
 
         if (window.location !== window.parent.location) {
-            create_menubar_item(">", "#", function(a, li) {
+            create_menubar_item("▶", "#", function (a, li) {
                 a.attr("href", null).addClass("vsc-nav-arrow");
-                a.on("click", function(e) { e.preventDefault(); history.forward(); });
+                a.on("click", function (e) { e.preventDefault(); history.forward(); });
                 li.addClass("vsc-nav-item").detach();
                 $("#nav").prepend(li);
             });
-            create_menubar_item("<", "#", function(a, li) {
+            create_menubar_item("◀", "#", function (a, li) {
                 a.attr("href", null).addClass("vsc-nav-arrow");
-                a.on("click", function(e) { e.preventDefault(); history.back(); });
+                a.on("click", function (e) { e.preventDefault(); history.back(); });
                 li.addClass("vsc-nav-item").detach();
                 $("#nav").prepend(li);
             });
@@ -30,7 +30,7 @@ addEventListener("load", function (event) {
     // Hijack code view buttons:
     // - Copy button: keep original icon, but open code in VS Code editor instead
     // - Play button: new button, evaluates selected code (or all) in sclang
-    document.querySelectorAll('.codeMirrorContainer').forEach(function(container) {
+    document.querySelectorAll('.codeMirrorContainer').forEach(function (container) {
         var button = container.querySelector('.copy-button');
         var editor = container.querySelector('.editor');
         if (!button || !editor) return;
@@ -39,7 +39,7 @@ addEventListener("load", function (event) {
         var newButton = button.cloneNode(true);
         newButton.title = 'Open in editor';
 
-        newButton.addEventListener('click', function(e) {
+        newButton.addEventListener('click', function (e) {
             e.preventDefault();
             e.stopPropagation();
             window.parent.postMessage({
@@ -55,7 +55,7 @@ addEventListener("load", function (event) {
         playButton.innerHTML = '<span class="copy-ico" style="opacity:1;visibility:visible;">\u25B6</span>';
 
         // Use mousedown: CM's blur handler clears selection before click fires
-        playButton.addEventListener('mousedown', function(e) {
+        playButton.addEventListener('mousedown', function (e) {
             e.preventDefault();
             e.stopPropagation();
             var cm = editor.editor;
@@ -93,7 +93,7 @@ addEventListener("load", function (event) {
         updateStickyPos();
 
         if (cm) {
-            cm.on('cursorActivity', function() {
+            cm.on('cursorActivity', function () {
                 if (cm.somethingSelected()) {
                     // cursorCoords(true) = selection start, 'local' = relative to CM editor
                     var cmWrap = container.querySelector('.CodeMirror');
@@ -134,19 +134,19 @@ addEventListener("load", function (event) {
     // Pick the SC Doc theme whose code background is closest to the VS Code editor background
     function selectBestTheme(editorBg) {
         var themes = {
-            'default':        '#ffffff',
-            'classic':        '#ffffff',
+            'default': '#ffffff',
+            'classic': '#ffffff',
             'solarizedLight': '#fdf6e3',
-            'monokai':        '#272822',
-            'dracula':        '#282a36',
-            'solarizedDark':  '#002b36',
-            'dark':           '#000000',
+            'monokai': '#272822',
+            'dracula': '#282a36',
+            'solarizedDark': '#002b36',
+            'dark': '#000000',
         };
 
         function parseHex(hex) {
             hex = hex.replace('#', '');
-            if (hex.length === 3) hex = hex[0]+hex[0]+hex[1]+hex[1]+hex[2]+hex[2];
-            return [parseInt(hex.slice(0,2),16), parseInt(hex.slice(2,4),16), parseInt(hex.slice(4,6),16)];
+            if (hex.length === 3) hex = hex[0] + hex[0] + hex[1] + hex[1] + hex[2] + hex[2];
+            return [parseInt(hex.slice(0, 2), 16), parseInt(hex.slice(2, 4), 16), parseInt(hex.slice(4, 6), 16)];
         }
 
         function parseColor(str) {
@@ -158,8 +158,8 @@ addEventListener("load", function (event) {
         }
 
         function colorDist(a, b) {
-            var dr = a[0]-b[0], dg = a[1]-b[1], db = a[2]-b[2];
-            return dr*dr + dg*dg + db*db;
+            var dr = a[0] - b[0], dg = a[1] - b[1], db = a[2] - b[2];
+            return dr * dr + dg * dg + db * db;
         }
 
         var target = parseColor(editorBg);
@@ -207,7 +207,7 @@ addEventListener("load", function (event) {
 
     // Rebroadcast keyboard events to the outer webview so VS Code can
     // handle shortcuts like Cmd+W (close panel) while the iframe has focus.
-    var rebroadcast = function(type, e) {
+    var rebroadcast = function (type, e) {
         window.parent.postMessage({
             command: 'keyboard-rebroadcast',
             type: type,
@@ -221,8 +221,8 @@ addEventListener("load", function (event) {
             repeat: e.repeat
         }, '*');
     };
-    window.addEventListener('keydown', function(e) { rebroadcast('keydown', e); });
-    window.addEventListener('keyup', function(e) { rebroadcast('keyup', e); });
+    window.addEventListener('keydown', function (e) { rebroadcast('keydown', e); });
+    window.addEventListener('keyup', function (e) { rebroadcast('keyup', e); });
 
     for (var i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);

@@ -64,17 +64,17 @@ a.menu-link {
     border-right: none !important;
 }
 
-.vsc-nav-item + .vsc-nav-item {
+.vsc-nav-item+.vsc-nav-item {
     border-left: none !important;
 }
 
 a.vsc-nav-arrow {
     text-transform: none !important;
-    font-size: 13px !important;
-    font-weight: 600 !important;
-    padding: 0 0.25em !important;
-    line-height: 1.5em !important;
-    opacity: 0.4;
+    font-size: 12px !important;
+    font-weight: 900 !important;
+    padding: 0 0.5em !important;
+    line-height: 1.3em !important;
+    opacity: 0.5;
     transition: opacity 0.15s ease;
 }
 
@@ -86,11 +86,13 @@ a.vsc-nav-arrow:hover {
     background-color: var(--vscode-menu-background) !important;
 }
 
-.submenu, #toc {
+.submenu,
+#toc {
     background-color: var(--vscode-menu-background) !important;
 }
 
-.note, .warning {
+.note,
+.warning {
     color: var(--vscode-statusBarItem-warningForeground) !important;
     background-color: var(--vscode-statusBarItem-warningBackground) !important;
 }
@@ -103,7 +105,10 @@ a.vsc-nav-arrow:hover {
     color: var(--vscode-editor-foreground) !important;
 }
 
-#search_checks, #search_checks0, #search_box, #search_settings {
+#search_checks,
+#search_checks0,
+#search_box,
+#search_settings {
     color: var(--vscode-editor-foreground) !important;
     background: var(--vscode-input-background) !important;
 }
@@ -154,9 +159,8 @@ a.vsc-nav-arrow:hover {
 
 .CodeMirror-selected,
 .CodeMirror-line::selection,
-.CodeMirror-line > span::selection,
-.CodeMirror-line > span > span::selection {
+.CodeMirror-line>span::selection,
+.CodeMirror-line>span>span::selection {
     background-color: var(--vscode-editor-selectionBackground) !important;
     opacity: 1 !important;
 }
-
