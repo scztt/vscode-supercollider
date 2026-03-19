@@ -33,7 +33,7 @@ jobs:
           fi
 
       - name: Update package.json version
-        run: npm version "${{ steps.version.outputs.version }}" --no-git-tag-version
+        run: npm version "${{ steps.version.outputs.version }}" --no-git-tag-version --allow-same-version
 
       - name: Package extension
         run: |
