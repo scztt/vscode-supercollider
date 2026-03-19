@@ -79,7 +79,7 @@ export class SuperColliderMcpServer {
     constructor() {
         this.server = new FastMCP({
             name: 'SuperCollider',
-            version: '0.1.0-beta',
+            version: '0.1.0',
         });
 
         this.registerTools();
