@@ -79,7 +79,7 @@ export class SuperColliderMcpServer {
     constructor() {
         this.server = new FastMCP({
             name: 'SuperCollider',
-            version: '0.1.0',
+            version: '0.1.0-beta',
         });
 
         this.registerTools();
@@ -584,6 +584,6 @@ export class SuperColliderMcpServer {
     dispose() {
         this.outputDisposable?.dispose();
         this.outputDisposable = null;
-        this.server?.stop().catch(() => {});
+        this.server?.stop().catch(() => { });
     }
 }
