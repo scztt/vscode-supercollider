@@ -24,7 +24,7 @@ jobs:
       - run: npm ci
       - run: npm install -g @vscode/vsce
       - run: npm run build --if-present
-      - run: vsce package --pre-release --out vscode-supercollider-${{ github.ref_name }}.vsix
+      - run: vsce package --pre-release --out "vscode-supercollider-${GITHUB_REF_NAME//\//-}-${GITHUB_SHA::8}.vsix"
 
       - uses: actions/upload-artifact@v4
         with:
