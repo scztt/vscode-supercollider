@@ -22,10 +22,18 @@ import {
     UDPMessageReader,
     UDPMessageWriter
 } from './util/readerWriter';
+import {
+    StreamMessageReader,
+    StreamMessageWriter
+} from 'vscode-jsonrpc/node';
 import { LiveshareGuestProxy, LiveshareHost, onLiveshareSession } from './util/liveshare';
 import { Role } from 'vsls';
 
 const lspAddress = '127.0.0.1';
+
+function getRelayPath(): string | null {
+    return workspace.getConfiguration().get<string>('supercollider.sclang.relayCmd') || null;
+}
 
 const startingPort = 58110;
 const portIncrement = 10;
@@ -178,17 +186,13 @@ export class SuperColliderContext implements Disposable, EvaluationDelegate, Com
         }
     }
 
-    async processOptions(readPort: number, writePort: number) {
-        const configuration = workspace.getConfiguration()
-
-        const sclangPath = await getSclangPath()
-        let sclangConfYaml = configuration.get<string>('supercollider.sclang.confYaml', defaults.userConfigPath())
-        const loadWorkspaceYaml = configuration.get<boolean>('supercollider.sclang.loadWorkspaceConfYaml', false)
-        const sclangArgs = configuration.get<Array<string>>('supercollider.sclang.args')
-        const sclangEnv = configuration.get<Object>('supercollider.sclang.environment')
+    private async resolveConfYaml(): Promise<string> {
+        const configuration = workspace.getConfiguration();
+        let sclangConfYaml = configuration.get<string>('supercollider.sclang.confYaml', defaults.userConfigPath());
+        const loadWorkspaceYaml = configuration.get<boolean>('supercollider.sclang.loadWorkspaceConfYaml', false);
 
         if (loadWorkspaceYaml) {
-            let confFiles = []
+            let confFiles = [];
 
             const folders = workspace.workspaceFolders || [];
             for (let folder of folders) {
@@ -199,46 +203,92 @@ export class SuperColliderContext implements Disposable, EvaluationDelegate, Com
             if (confFiles.length == 1) {
                 sclangConfYaml = confFiles[0].fsPath;
             } else if (confFiles.length > 1) {
-                vscode.window.showErrorMessage("Multiple sclang_conf.yaml files found in workspace. Please set supercollider.sclang.confYaml to the desired file.")
-            } else {
-                // No files, so use the default
+                vscode.window.showErrorMessage("Multiple sclang_conf.yaml files found in workspace. Please set supercollider.sclang.confYaml to the desired file.");
             }
         }
+
+        return sclangConfYaml;
+    }
+
+    async processOptionsRelay(outputPort: number) {
+        const configuration = workspace.getConfiguration();
+
+        const sclangPath = await getSclangPath();
+        const sclangConfYaml = await this.resolveConfYaml();
+        const sclangArgs = configuration.get<Array<string>>('supercollider.sclang.args');
+        const sclangEnv = configuration.get<Object>('supercollider.sclang.environment');
+        const relayPath = getRelayPath();
 
         this.resolvedSclangPath = sclangPath;
         this.resolvedConfYamlPath = sclangConfYaml;
 
-        let env = process.env;
+        let env = { ...process.env };
+        env['LOGLEVEL'] = configuration.get<string>('supercollider.languageServerLogLevel');
+
+        let spawnOptions: cp.SpawnOptions = {
+            env: Object.assign(env, sclangEnv),
+            stdio: ['pipe', 'pipe', 'pipe'],
+        };
+
+        let extraArgs = sclangArgs || [];
+
+        let args = [
+            'relay',
+            '--sclang_path', sclangPath,
+            '--port', outputPort.toString(),
+        ];
+
+        if (sclangConfYaml) {
+            args.push('--conf_path', sclangConfYaml);
+        }
+
+        // Pass additional sclang args after --
+        if (extraArgs.length > 0) {
+            args.push('--', ...extraArgs);
+        }
+
+        return {
+            command: relayPath,
+            args,
+            options: spawnOptions,
+        };
+    }
+
+    async processOptionsUDP(readPort: number, writePort: number) {
+        const configuration = workspace.getConfiguration();
+
+        const sclangPath = await getSclangPath();
+        const sclangConfYaml = await this.resolveConfYaml();
+        const sclangArgs = configuration.get<Array<string>>('supercollider.sclang.args');
+        const sclangEnv = configuration.get<Object>('supercollider.sclang.environment');
+
+        this.resolvedSclangPath = sclangPath;
+        this.resolvedConfYamlPath = sclangConfYaml;
+
+        let env = { ...process.env };
         env['SCLANG_LSP_ENABLE'] = '1';
         env['SCLANG_LSP_SERVERPORT'] = readPort.toString();
         env['SCLANG_LSP_CLIENTPORT'] = writePort.toString();
-        env['SCLANG_LSP_LOGLEVEL'] = configuration.get<string>('supercollider.languageServerLogLevel')
+        env['SCLANG_LSP_LOGLEVEL'] = configuration.get<string>('supercollider.languageServerLogLevel');
 
         let spawnOptions: cp.SpawnOptions = {
-            env: Object.assign(env, sclangEnv)
-            // cwd?: string;
-            // stdio?: any;
-            // detached?: boolean;
-            // uid?: number;
-            // gid?: number;
-            // shell?: boolean | string;
-        }
+            env: Object.assign(env, sclangEnv),
+        };
 
-        let args = sclangArgs || [];
+        let extraArgs = sclangArgs || [];
 
         return {
             command: sclangPath,
             args: [
-                ...args,
-                ...['-i', 'vscode',
-                    '-l', sclangConfYaml]
+                ...extraArgs,
+                '-i', 'vscode',
+                '-l', sclangConfYaml,
             ],
-            options: spawnOptions
+            options: spawnOptions,
         };
     }
 
-    async createProcess(readPort: number, writePort: number) {
-        let options = await this.processOptions(readPort, writePort);
+    private spawnFromOptions(options: { command: string, args: string[], options: cp.SpawnOptions }) {
         let sclangProcess = cp.spawn(options.command, options.args, options.options);
 
         if (!sclangProcess || !sclangProcess.pid) {
@@ -246,6 +296,228 @@ export class SuperColliderContext implements Disposable, EvaluationDelegate, Com
         }
 
         return sclangProcess;
+    }
+
+    /**
+     * Relay mode: LSP over stdio, sclang output forwarded via UDP.
+     */
+    private async startWithRelay(): Promise<MessageTransports> {
+        // Open a UDP socket to receive sclang's post window output from the relay
+        const outputSocket = dgram.createSocket('udp4');
+        await new Promise<void>((resolve) => {
+            outputSocket.bind(0, lspAddress, () => resolve());
+        });
+        const outputPort = outputSocket.address().port;
+
+        this.setState('starting');
+        const options = await this.processOptionsRelay(outputPort);
+
+        this._outputEventEmitter.fire({
+            text: `[relay] ${options.command} ${options.args.join(' ')}\n`,
+            source: 'vscode'
+        });
+
+        const sclangProcess = this.sclangProcess = this.spawnFromOptions(options);
+
+        if (!sclangProcess) {
+            outputSocket.close();
+            throw new Error(`Problem launching relay executable: ${options.command} ${options.args.join(' ')}`);
+        }
+
+        // Create reader/writer on stdout/stdin immediately so no data is lost.
+        // The LanguageClient won't use them until we resolve the promise below.
+        const reader = new StreamMessageReader(sclangProcess.stdout);
+        const writer = new StreamMessageWriter(sclangProcess.stdin);
+
+        // Tap LSP I/O for debugging
+        const lspLog = vscode.window.createOutputChannel('SuperCollider LSP IO', 'json');
+        const origListen = reader.listen.bind(reader);
+        reader.listen = (callback) => {
+            return origListen((msg) => {
+                lspLog.appendLine(`<<< ${JSON.stringify(msg)}`);
+                callback(msg);
+            });
+        };
+        const origWrite = writer.write.bind(writer);
+        writer.write = (msg) => {
+            lspLog.appendLine(`>>> ${JSON.stringify(msg)}`);
+            return origWrite(msg);
+        };
+
+        return new Promise<MessageTransports>((resolve, reject) => {
+            let resolved = false;
+
+            const cleanup = () => {
+                try { outputSocket.close(); } catch {}
+                if (this.sclangProcess === sclangProcess) {
+                    this.disposeProcess();
+                }
+            };
+
+            const rejectIfPending = (message: string) => {
+                if (!resolved) {
+                    resolved = true;
+                    cleanup();
+                    reject(new Error(message));
+                }
+            };
+
+            // Check any text source for the ready signal or compile errors
+            const checkForReady = (string: string) => {
+                if (resolved) return;
+
+                if (string.indexOf('***LSP READY***') != -1) {
+                    resolved = true;
+                    this.setState('running');
+                    resolve({ reader, writer, detached: false });
+                }
+
+                if (string.indexOf('Library has not been compiled successfully') != -1) {
+                    rejectIfPending('SuperCollider class library failed to compile. Check the output for errors.');
+                }
+            };
+
+            // sclang post window output arrives via UDP from the relay
+            outputSocket.on('message', (msg) => {
+                const string = msg.toString();
+                this._outputEventEmitter.fire({ text: string, source: 'sclang' });
+                checkForReady(string);
+            });
+
+            // stderr carries relay-level diagnostics
+            sclangProcess.stderr?.on('data', (data: Buffer) => {
+                const string = data.toString();
+                this._outputEventEmitter.fire({ text: string, source: 'sclang' });
+                checkForReady(string);
+            });
+
+            sclangProcess.on('exit', (code, signal) => {
+                rejectIfPending('sclang/relay exited (code=' + code + ') before initialization completed.');
+                cleanup();
+            });
+
+            this._outputEventEmitter.fire({
+                text: "\n\n*********************************************************\n\n\n",
+                source: 'vscode'
+            });
+        });
+    }
+
+    /**
+     * Legacy mode: LSP over UDP sockets, sclang output via stdout.
+     */
+    private startWithUDP(): Promise<MessageTransports> {
+        const that = this;
+
+        return new Promise<MessageTransports>((res, err) => {
+            let readerSocket = new Promise<dgram.Socket>((resolve, reject) => {
+                let socket = dgram.createSocket('udp4');
+                socket.bind(0, lspAddress, () => {
+                    resolve(socket);
+                });
+            });
+            let writerSocket = new Promise<dgram.Socket>((resolve, reject) => {
+                let socket = dgram.createSocket('udp4');
+                socket.bind({
+                    address: lspAddress,
+                    exclusive: false
+                },
+                    () => {
+                        resolve(socket);
+                    });
+            }).then((socket) => {
+                // SUBTLE: SuperCollider cannot open port=0 (e.g. OS assigned) ports. So, we stand a better chance of
+                //         finding an open port by opening on our end, then immediately closing and pointing SC to that one.
+                var port = socket.address().port;
+                return new Promise<number>((resolve, reject) => {
+                    socket.close(() => {
+                        resolve(port);
+                    });
+                });
+            });
+
+            Promise.all([readerSocket, writerSocket]).then(async (sockets) => {
+                let socket = sockets[0];
+
+                let readerPort = socket.address().port;
+                let writerPort = sockets[1];
+                let reader = new UDPMessageReader(socket);
+                let writer = new UDPMessageWriter(socket, writerPort, lspAddress);
+
+                that.setState('starting');
+                const options = await that.processOptionsUDP(readerPort, writerPort);
+                let sclangProcess = that.sclangProcess = that.spawnFromOptions(options);
+
+                if (!sclangProcess) {
+                    err("Problem launching sclang executable. Check your settings to ensure `supercollider.sclang.cmd` points to a valid sclang path.");
+                }
+
+                const streamInfo: MessageTransports = { reader: reader, writer: writer, detached: false };
+                let resolved = false;
+
+                const cleanup = () => {
+                    reader.dispose();
+                    writer.dispose();
+                    try { socket.close(); } catch {}
+                    if (that.sclangProcess === sclangProcess) {
+                        that.disposeProcess();
+                    }
+                };
+
+                const rejectIfPending = (message: string) => {
+                    if (!resolved) {
+                        resolved = true;
+                        cleanup();
+                        err(message);
+                    }
+                };
+
+                sclangProcess.stdout
+                    .on('data', data => {
+                        let string = data.toString();
+                        that._outputEventEmitter.fire({
+                            text: string,
+                            source: 'sclang'
+                        });
+
+                        if (string.indexOf('***LSP READY***') != -1) {
+                            resolved = true;
+                            that.setState('running');
+                            res(streamInfo);
+                        }
+
+                        if (string.indexOf('Library has not been compiled successfully') != -1) {
+                            rejectIfPending('SuperCollider class library failed to compile. Check the output for errors.');
+                        }
+                    })
+                    .on('end', async (args) => {
+                        that._outputEventEmitter.fire({
+                            text: "\nsclang exited\n",
+                            source: 'vscode'
+                        });
+
+                        rejectIfPending('sclang exited before initialization completed.');
+                    })
+                    .on('error', async (e) => {
+                        that._outputEventEmitter.fire({
+                            text: "\nsclang errored: " + e,
+                            source: 'sclang'
+                        });
+
+                        rejectIfPending('sclang errored: ' + e);
+                    });
+
+                sclangProcess.on('exit', async (code, signal) => {
+                    rejectIfPending('sclang exited (code=' + code + ') before initialization completed.');
+                    cleanup();
+                });
+
+                that._outputEventEmitter.fire({
+                    text: "\n\n*********************************************************\n\n\n",
+                    source: 'vscode'
+                });
+            });
+        });
     }
 
     disposeProcess() {
@@ -319,126 +591,13 @@ export class SuperColliderContext implements Disposable, EvaluationDelegate, Com
         }
 
         const serverOptions: ServerOptions = function () {
-            // @TODO what if terminal launch fails?
+            const relayPath = getRelayPath();
 
-            const configuration = workspace.getConfiguration()
-
-            return new Promise<MessageTransports>((res, err) => {
-                let readerSocket = new Promise<dgram.Socket>((resolve, reject) => {
-                    let socket = dgram.createSocket('udp4');
-                    socket.bind(0, lspAddress, () => {
-                        resolve(socket);
-                    })
-                });
-                let writerSocket = new Promise<dgram.Socket>((resolve, reject) => {
-                    let socket = dgram.createSocket('udp4');
-                    socket.bind({
-                        address: lspAddress,
-                        exclusive: false
-                    },
-                        () => {
-                            resolve(socket);
-                        })
-                }).then((socket) => {
-                    // SUBTLE: SuperCollider cannot open port=0 (e.g. OS assigneded) ports. So, we stand a better chance of
-                    //         finding an open port by opening on our end, then immediately closing and pointing SC that one.
-                    var port = socket.address().port;
-                    return new Promise<number>((resolve, reject) => {
-                        socket.close(() => {
-                            resolve(port);
-                        })
-                    })
-                });
-
-                Promise.all([readerSocket, writerSocket]).then(async (sockets) => {
-                    let socket = sockets[0];
-
-                    let readerPort = socket.address().port;
-                    let writerPort = sockets[1];
-                    let reader = new UDPMessageReader(socket);
-                    let writer = new UDPMessageWriter(socket, writerPort, lspAddress);
-
-                    that.setState('starting');
-                    let sclangProcess = that.sclangProcess = await that.createProcess(readerPort, writerPort);
-
-                    if (!sclangProcess) {
-                        err("Problem launching sclang executable. Check your settings to ensure `supercollider.sclang.cmd` points to a valid sclang path.")
-                    }
-
-                    const streamInfo: MessageTransports = { reader: reader, writer: writer, detached: false };
-                    let resolved = false;
-
-                    const cleanup = () => {
-                        reader.dispose();
-                        writer.dispose();
-                        try { socket.close(); } catch {}
-                        if (that.sclangProcess === sclangProcess) {
-                            that.disposeProcess();
-                        }
-                    };
-
-                    const rejectIfPending = (message: string) => {
-                        if (!resolved) {
-                            resolved = true;
-                            cleanup();
-                            err(message);
-                        }
-                    };
-
-                    sclangProcess.stdout
-                        .on('data', data => {
-                            let string = data.toString();
-                            // Emit event instead of direct outputChannel access
-                            that._outputEventEmitter.fire({
-                                text: string,
-                                source: 'sclang'
-                            });
-
-                            if (string.indexOf('***LSP READY***') != -1) {
-                                resolved = true;
-                                that.setState('running');
-                                res(streamInfo);
-                            }
-
-                            if (string.indexOf('Library has not been compiled successfully') != -1) {
-                                rejectIfPending('SuperCollider class library failed to compile. Check the output for errors.');
-                            }
-                        })
-                        .on('end', async (args) => {
-                            // Emit end event
-                            that._outputEventEmitter.fire({
-                                text: "\nsclang exited\n",
-                                source: 'vscode'
-                            });
-
-                            rejectIfPending('sclang exited before initialization completed.');
-                        })
-                        .on('error', async (e) => {
-                            // Emit error event
-                            that._outputEventEmitter.fire({
-                                text: "\nsclang errored: " + e,
-                                source: 'sclang'
-                            });
-
-                            rejectIfPending('sclang errored: ' + e);
-                        });
-
-                    sclangProcess.on('exit', async (code, signal) => {
-                        rejectIfPending('sclang exited (code=' + code + ') before initialization completed.');
-                        // Always clean up, even after successful startup.
-                        // Without this, sclangProcess stays non-null after an
-                        // unexpected exit, causing restart to attempt a graceful
-                        // LSP shutdown on a dead process (which times out).
-                        cleanup();
-                    });
-
-                    // Emit startup message
-                    that._outputEventEmitter.fire({
-                        text: "\n\n*********************************************************\n\n\n",
-                        source: 'vscode'
-                    });
-                });
-            });
+            if (relayPath) {
+                return that.startWithRelay();
+            } else {
+                return that.startWithUDP();
+            }
         };
 
         const clientOptions: LanguageClientOptions = {

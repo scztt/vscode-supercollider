@@ -120,6 +120,10 @@
                         "default": false,
                         "description": "EXPERIMENTAL: Enable LiveShare Coop support for SuperCollider. This will allow LiveShare guests to both edit and execute code on the hosts machine. **NOTE: This feature must be enabled per LiveShare session. Since this allows guests to execute arbitrary code on your machine, only invite users you trust.**"
                     },
+                    "supercollider.sclang.relayCmd": {
+                        "type": "string",
+                        "description": "Path to an LSP relay binary. When set, sclang is launched via the relay which provides stdio-based LSP communication instead of UDP."
+                    },
                     "supercollider.mcp.enabled": {
                         "type": "boolean",
                         "default": false,
