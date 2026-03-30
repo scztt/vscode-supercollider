@@ -76,6 +76,14 @@ export class UDPMessageWriter extends AbstractMessageWriter {
 
     write(msg: Message) {
         return new Promise<void>((res, err) => {
+            try {
+                this.socket.getSendBufferSize();
+            } catch (e) {
+                // Socket is closed or not bound — discard the message
+                res();
+                return;
+            }
+
             let data = JSON.stringify(msg);
             let dataSize = Buffer.byteLength(data, 'utf8');
             let dataLength = data.length;
@@ -99,6 +107,6 @@ export class UDPMessageWriter extends AbstractMessageWriter {
     }
 
     end() {
-        this.socket.close();
+        try { this.socket.close(); } catch { }
     }
 }
