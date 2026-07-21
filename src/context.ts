@@ -423,6 +423,23 @@ export class SuperColliderContext implements Disposable, EvaluationDelegate, Com
                             rejectIfPending('sclang errored: ' + e);
                         });
 
+                    // If stderr isn't consumed, the OS pipe buffer fills (~64KB)
+                    // and sclang's write(2) calls eventually block — stalling the
+                    // interpreter. Drain it into the same output channel.
+                    sclangProcess.stderr
+                        .on('data', (data: Buffer) => {
+                            that._outputEventEmitter.fire({
+                                text: data.toString(),
+                                source: 'sclang'
+                            });
+                        })
+                        .on('error', (e: Error) => {
+                            that._outputEventEmitter.fire({
+                                text: "\nsclang stderr errored: " + e,
+                                source: 'sclang'
+                            });
+                        });
+
                     sclangProcess.on('exit', async (code, signal) => {
                         rejectIfPending('sclang exited (code=' + code + ') before initialization completed.');
                         // Always clean up, even after successful startup.
