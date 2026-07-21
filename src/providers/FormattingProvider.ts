@@ -33,11 +33,11 @@ export class SuperColliderFormatter implements DocumentFormattingEditProvider, D
 
     start() {
         if (!this.formatterProcess) {
-            this.output.appendLine(`[formatter] spawn: ${this.spawnSpec.command} ${this.spawnSpec.args.join(' ')}`);
             let args = ['-i', this.tabSize.toString(), '-w'];
             if (!this.useSpaces) {
                 args = [...args, '-t']
             }
+            this.output.appendLine(`[formatter] spawn: ${this.formatterPath} ${args.join(' ')}`);
 
             this.formatterProcess = cp.spawn(this.formatterPath, args, {
                 stdio: 'pipe'
