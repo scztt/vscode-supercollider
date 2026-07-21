@@ -164,7 +164,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
             await new Promise((res, rej) => {
                 sclangProcess.on('exit', (code) => {
-                    if (code === 999) {
+                    if (code === 0) {
                         outputChannel.appendLine(`\n***LanguageServer quark installed/updated successfully.***`);
                         res(true);
                     } else {
