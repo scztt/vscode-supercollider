@@ -1,4 +1,3 @@
-import { GetStringRegKey } from '@vscode/windows-registry'
 import * as fs from 'fs'
 import {
     homedir,
@@ -10,6 +9,18 @@ import { env } from 'process'
 const ApplicationName = 'SuperCollider'
 const Home = homedir();
 const sclangConfYaml = 'sclang_conf.yaml'
+
+// The windows-registry native module can fail to load (e.g. unsupported
+// architecture, portable VSCode installs - see issue #42). Registry lookup is
+// only used to locate a default sclang path, so degrade gracefully instead of
+// failing extension activation.
+type GetStringRegKeyFn = (hive: any, path: string, name: string) => string | undefined;
+let GetStringRegKey: GetStringRegKeyFn | undefined;
+try {
+    GetStringRegKey = require('@vscode/windows-registry').GetStringRegKey;
+} catch {
+    GetStringRegKey = undefined;
+}
 
 export function sclangExecutable() {
     switch (platform()) {
@@ -55,16 +66,20 @@ function getInstallPathWin() {
         .map((_, i) => i)
         .reverse();
 
-    try {
-        return GetStringRegKey('HKEY_CURRENT_USER', `SOFTWARE\\${ApplicationName}\\CurrentVersion`, '')
-    } catch { }
+    if (GetStringRegKey !== undefined) {
+        try {
+            const found = GetStringRegKey('HKEY_CURRENT_USER', `SOFTWARE\\${ApplicationName}\\CurrentVersion`, '')
+            if (found) return found;
+        } catch { }
 
-    for (const minor of minorVersions) {
-        for (const patch of patchVersions) {
-            const versionString = `3.${minor}.${patch}`;
-            try {
-                return GetStringRegKey('HKEY_CURRENT_USER', `SOFTWARE\\${ApplicationName}\\${versionString}`, '')
-            } catch { }
+        for (const minor of minorVersions) {
+            for (const patch of patchVersions) {
+                const versionString = `3.${minor}.${patch}`;
+                try {
+                    const found = GetStringRegKey('HKEY_CURRENT_USER', `SOFTWARE\\${ApplicationName}\\${versionString}`, '')
+                    if (found) return found;
+                } catch { }
+            }
         }
     }
 
