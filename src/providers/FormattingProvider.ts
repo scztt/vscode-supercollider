@@ -12,7 +12,7 @@ class FormatResults {
 export class SuperColliderFormatter implements DocumentFormattingEditProvider, Disposable {
     output: OutputChannel;
     formatterPath: string;
-    formatterProcess: cp.ChildProcess;
+    formatterProcess: cp.ChildProcess | null = null;
     tabSize: Number;
     useSpaces: Boolean;
     listeners: FormatResults[] = [];
@@ -33,6 +33,7 @@ export class SuperColliderFormatter implements DocumentFormattingEditProvider, D
 
     start() {
         if (!this.formatterProcess) {
+            this.output.appendLine(`[formatter] spawn: ${this.spawnSpec.command} ${this.spawnSpec.args.join(' ')}`);
             let args = ['-i', this.tabSize.toString(), '-w'];
             if (!this.useSpaces) {
                 args = [...args, '-t']
@@ -41,17 +42,30 @@ export class SuperColliderFormatter implements DocumentFormattingEditProvider, D
             this.formatterProcess = cp.spawn(this.formatterPath, args, {
                 stdio: 'pipe'
             });
-            this.formatterProcess.stdout.on('data', (stream) => {
+            this.formatterProcess.stdout?.on('data', (stream) => {
                 this.onData(stream);
-            })
+            });
+            this.formatterProcess.stderr?.on('data', (stream) => {
+                this.output.appendLine(`[formatter] stderr: ${stream.toString().trimEnd()}`);
+            });
+            this.formatterProcess.on('exit', (code, signal) => {
+                this.output.appendLine(`[formatter] exited code=${code} signal=${signal}`);
+                this.formatterProcess = null;
+                const pending = this.listeners;
+                this.listeners = [];
+                for (const l of pending) l.resolve(l.text);
+            });
+            this.formatterProcess.on('error', (err) => {
+                this.output.appendLine(`[formatter] spawn error: ${err.message}`);
+            });
         }
     }
 
     end() {
         if (this.formatterProcess) {
             if (this.formatterProcess.connected) {
-                this.formatterProcess.stdin.write(EXIT_STRING);
-                this.formatterProcess.stdin.end();
+                this.formatterProcess.stdin?.write(EXIT_STRING);
+                this.formatterProcess.stdin?.end();
             }
             this.formatterProcess.kill();
             this.formatterProcess.disconnect()
