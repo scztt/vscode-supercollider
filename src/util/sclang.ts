@@ -23,7 +23,7 @@ async function findSclangPath(pathHint: string) {
     return userPath;
 }
 
-export async function getSclangPath() {
+export async function getSclangPath(): Promise<string> {
     const configuration = workspace.getConfiguration();
     const sclangPath = configuration.get<string>('supercollider.sclang.cmd', defaults.sclangPath()) || defaults.sclangPath()
 
@@ -31,8 +31,7 @@ export async function getSclangPath() {
         await fs.promises.access(sclangPath);
         return sclangPath;
     }
-    catch
-    {
+    catch {
         const changeSetting = "Find sclang"
         const choice = await vscode.window.showErrorMessage(
             `Could not find sclang executable at the path: ${sclangPath}.`,

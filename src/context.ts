@@ -1,5 +1,6 @@
 import * as cp from 'child_process';
 import * as dgram from 'dgram';
+import * as path from 'path';
 import * as vscode from 'vscode';
 import {
     Disposable,
@@ -205,6 +206,7 @@ export class SuperColliderContext implements Disposable, EvaluationDelegate, Com
             }
         }
 
+        const cwd = sclangPath ? path.dirname(sclangPath) : undefined;
         this.resolvedSclangPath = sclangPath;
         this.resolvedConfYamlPath = sclangConfYaml;
 
@@ -215,13 +217,8 @@ export class SuperColliderContext implements Disposable, EvaluationDelegate, Com
         env['SCLANG_LSP_LOGLEVEL'] = configuration.get<string>('supercollider.languageServerLogLevel')
 
         let spawnOptions: cp.SpawnOptions = {
-            env: Object.assign(env, sclangEnv)
-            // cwd?: string;
-            // stdio?: any;
-            // detached?: boolean;
-            // uid?: number;
-            // gid?: number;
-            // shell?: boolean | string;
+            env: Object.assign(env, sclangEnv),
+            cwd: cwd,
         }
 
         let args = sclangArgs || [];
@@ -371,7 +368,7 @@ export class SuperColliderContext implements Disposable, EvaluationDelegate, Com
                     const cleanup = () => {
                         reader.dispose();
                         writer.dispose();
-                        try { socket.close(); } catch {}
+                        try { socket.close(); } catch { }
                         if (that.sclangProcess === sclangProcess) {
                             that.disposeProcess();
                         }
@@ -656,7 +653,7 @@ export class SuperColliderContext implements Disposable, EvaluationDelegate, Com
 
         // Process is already dead (disposeProcess above) — LSP shutdown
         // will never get a response, so use timeout 0.
-        try { await this.client.stop(0); } catch {}
+        try { await this.client.stop(0); } catch { }
     }
 
     async restart() {
