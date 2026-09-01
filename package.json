@@ -395,7 +395,7 @@
         "@types/marked": "^5.0.2",
         "@vscode/windows-registry": "^1.1.0",
         "fastmcp": "^3.31.0",
-        "marked": "^16.4.1",
+        "marked": "^18.0.2",
         "vscode-languageclient": "^8.1.0",
         "vsls": "^1.0.4753",
         "zod": "^4.3.6"
